@@ -705,7 +705,16 @@ aws_upload_complete_setvar () {
 }
 
 upload_ledger_headers () {
-  echo -e "DATETIME\tARCHIVE_BYTES\tARCHIVE_CKSUM\tAWS_ARCHIVE_ID"
+  local FIELD1="DATETIME_YYYYMM_DDHHHHTZ"
+  # For example 2019-09-23T16:00:00-0500.
+  local FIELD2="FILE_BYTES"
+  # For example 7572565631.
+  # A crazy long field header name so that on `cat` the output kinda lines up.
+  local FIELD3="FILE_CHECKSUM_SHASUM_ALGORITHM_256_BYTE_HASH_64_HEXADECIMAL_CHAR"
+  # For example abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234.
+  local FIELD4="FILE_ID"
+  # For example TptcApGw_4d7LcT2-aTseGQs....
+  echo -e "${FIELD1}\t${FIELD2}\t${FIELD3}\t${FIELD4}"
 }
 
 upload_ledger_append () {
@@ -831,7 +840,11 @@ inventory_can_be_rotation () {
 }
 
 purged_ledger_headers () {
-  echo -e "DATETIME\tAWS_ARCHIVE_ID"
+  local FIELD1="DATETIME_YYYYMM_DDHHHHTZ"
+  # For example 2019-09-23T16:00:00-0500.
+  local FIELD2="FILE_ID"
+  # For example TptcApGw_4d7LcT2-aTseGQs....
+  echo -e "${FIELD1}\t${FIELD2}"
 }
 
 purged_ledger_update () {
