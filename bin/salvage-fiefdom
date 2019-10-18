@@ -1,0 +1,987 @@
+#!/bin/bash
+# vim:tw=0:ts=2:sw=2:et:ft=sh:
+
+setup_business_vars () {
+  APP_CMDNAME="salvage-fiefdom"
+  APP_VERSION=0.0.1
+}
+
+before_command () {
+  setup_business_vars
+}
+
+after_command () {
+  :
+}
+
+# ***
+
+print_version_and_exit () {
+  # Use hard coded name, not $0, which is 'bash' when file is sourced.
+  >&2 echo "${APP_CMDNAME} version ${APP_VERSION}"
+  exit 0
+}
+
+print_help_and_exit () {
+  >&2 echo -e "Usage: ${APP_CMDNAME}\n" \
+    "        [-v|--version]\n" \
+    "        [-h|--help]\n" \
+    "        [-V|--vault-name VAULT_NAME]\n" \
+    "        [-R|--region REGION]\n" \
+    "        [-U|--gpg-keyid GPG_KEYID]\n" \
+    "        [upload|rotate]"
+    "        [<path/to/fiefdom>]"
+  >&2 echo "Omit the final argument if you set FIEFDOM=path/to/fiefdom instead."
+  >&2 echo "See \`man ${APP_CMDNAME}\` for more help."
+  exit 0
+}
+
+process_cmd_help_or_version () {
+  # Examine all args, or up to '--' (which signifies end of positionals).
+  while [[ "$1" != '' && "$1" != '--' ]]; do
+    case $1 in
+      -v)
+        print_version_and_exit
+        ;;
+      --version)
+        print_version_and_exit
+        ;;
+      -h)
+        print_help_and_exit
+        ;;
+      --help)
+        print_help_and_exit
+        ;;
+    esac
+    shift
+  done
+}
+
+# ***
+
+setup_application_vars () {
+  SALVAGE_OP=
+  VAULT_NAME=${VAULT_NAME:-}
+  REGION=${REGION:-}
+  GPG_KEYID=${GPG_KEYID:-}
+  FIEFDOM=${FIEFDOM:-}
+
+  TREEHASHER=${TREEHASHER:-}
+
+  SAFI_CFG=${HOME}/.config/salvage-fiefdom
+  # Long-lived key-value files.
+  CFG_ARCHIVE_ID_FRESH=${SAFI_CFG}/.archive-id.fresh
+  CFG_ARCHIVE_ID_OLDER=${SAFI_CFG}/.archive-id.older
+  CFG_ARCHIVE_ID_NEWER=${SAFI_CFG}/.archive-id.newer
+  CFG_LEDGER_UP=${SAFI_CFG}/.ledger-upload
+  CFG_LEDGER_RM=${SAFI_CFG}/.ledger-remove
+  CFG_LATEST_XSUM=${SAFI_CFG}/.latest-checksum
+  CFG_LATEST_ENCD=${CFG_LATEST_XSUM}.gpg
+  # Operation-specific key-value files.
+  CFG_WORKDIR=${SAFI_CFG}/.workdir
+  CFG_AWS_DESC_VAULT=${SAFI_CFG}/.aws-describe-vault.out
+
+  PRINT_ELAPSED=${PRINT_ELAPSED:-true}
+
+  # Just to be safe, you can set a max upload size to prevent
+  # accidentally uploading files larger than you'd like.
+  MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:--1}
+
+  # Restrict frequency at which user is allowed to upload.
+  RESTRICT_UPLOAD_FREQ="1 day ago"
+
+  # Set SKIP_UPLOAD=true if you want to just flatten, compress,
+  # encrypt, and split; and want to skip uploading to Glacier.
+  SKIP_UPLOAD=${SKIP_UPLOAD:-false}
+}
+
+expect_application_vars () {
+  local exitcode=0
+
+  if [[ -z ${SALVAGE_OP} ]]; then
+    >&2 echo "ERROR: Specify an action: upload|rotate"
+    exitcode=6
+  fi
+
+  # upload-only required variables.
+  if [[ ${SALVAGE_OP} == "upload" ]]; then
+    if [[ -z ${FIEFDOM} ]]; then
+      >&2 echo -e 'ERROR: Specify <path/to/fiefdom>, or set FIEFDOM environment.' \
+        "For more help, try:\n  ${APP_CMDNAME} --help"
+      exitcode=7
+    elif [[ ! -d ${FIEFDOM} ]]; then
+      >&2 echo "ERROR: No directory at FIEFDOM: ${FIEFDOM}"
+      exitcode=8
+    fi
+
+    for var_name in \
+      GPG_KEYID \
+      TREEHASHER \
+    ; do
+      if [[ -z ${!var_name} ]]; then
+        >&2 echo "ERROR: Missing env. var. or --opt: ${var_name}"
+        exitcode=9
+      fi
+    done
+  fi
+
+  # upload|rotate required variables.
+  for var_name in \
+    REGION \
+    VAULT_NAME \
+  ; do
+    if [[ -z ${!var_name} ]]; then
+      >&2 echo "ERROR: Missing env. var. or --opt: ${var_name}"
+      exitcode=9
+    fi
+  done
+
+  return $exitcode
+}
+
+chatty_print_application_vars () {
+  local var_name
+  for var_name in \
+    VAULT_NAME \
+    REGION \
+    GPG_KEYID \
+    TREEHASHER \
+  ; do
+    [[ -n ${!var_name} ]] && echo "${var_name}=${!var_name}"
+  done
+  [[ -n ${FIEFDOM} ]] && echo "FIEFDOM=${FIEFDOM}"
+}
+
+# ***
+
+parse_args_application_opts () {
+  local skip_opts=false
+  local n_extra_args=0
+  local salvage_op=''
+  local fiefdom_arg=''
+  while [[ "$1" != '' ]]; do
+    local was_switch=false
+    if [[ ! ${skip_opts} && "$1" == '--' ]]; then
+      skip_opts=true
+      shift
+      continue
+    elif ! ${skip_opts}; then
+      was_switch=true
+      case $1 in
+        # ---
+        -V)
+          VAULT_NAME=$2
+          shift 2
+          ;;
+        -V=?*)
+          VAULT_NAME=${1#-V=}
+          shift
+          ;;
+        --vault-name)
+          VAULT_NAME=$2
+          shift 2
+          ;;
+        --vault-name=?*)
+          VAULT_NAME=${1#--vault-name=}
+          shift
+          ;;
+        # ---
+        -R)
+          REGION=$2
+          shift 2
+          ;;
+        -R=?*)
+          REGION=${1#-R=}
+          shift
+          ;;
+        --region)
+          REGION=$2
+          shift 2
+          ;;
+        --region=?*)
+          REGION=${1#--region=}
+          shift
+          ;;
+        # ---
+        -U)
+          GPG_KEYID=$2
+          shift 2
+          ;;
+        -U=?*)
+          GPG_KEYID=${1#-U=}
+          shift
+          ;;
+        --gpg-keyid)
+          GPG_KEYID=$2
+          shift 2
+          ;;
+        --gpg-keyid=?*)
+          GPG_KEYID=${1#--gpg-keyid=}
+          shift
+          ;;
+        # ---
+        *)
+          was_switch=false
+          ;;
+      esac
+      if ${was_switch}; then
+        continue
+      fi
+      if [[ -z ${salvage_op} ]]; then
+        salvage_op=$1
+      elif [[ -z ${fiefdom_arg} ]]; then
+        fiefdom_arg=$1
+      else
+        >&2 echo "ERROR: Unrecognized (additional) argument: $1"
+        n_extra_args=$((n_extra_args + 1))
+      fi
+    fi
+    shift
+  done
+  if [[ ${n_extra_args} -gt 0 ]]; then
+    >&2 echo 'ERROR: Too many additional, confusing arguments specified; please cleanup your command.'
+    exit 1
+  fi
+  SALVAGE_OP=${salvage_op}
+  if [[ -n ${fiefdom_arg} ]]; then
+    FIEFDOM=${fiefdom_arg}
+  fi
+}
+
+# ***
+
+ask_user_yes_no_must_yes () {
+  # Prompt user. Ask Yes or No.
+  local yes_or_no=""
+  echo -n "$1 [y/N] "
+  read -e yes_or_no
+  # Anything that starts with a 'Y' is acceptable.
+  if [[ ${yes_or_no^^} =~ ^Y.* ]]; then
+    return 0
+  else
+    echo "Apparently not!"
+    exit 5
+  fi
+}
+
+print_elapsed_time () {
+  ${PRINT_ELAPSED} || return 0
+  local time_0="$1"
+  local detail="$2"
+  local time_n=$(date +%s.%N)
+  local elapsed_fract="$(echo "(${time_n} - ${time_0}) / 60" | bc -l)"
+  if [[ $(echo "${elapsed_fract} >= 0.01" | bc -l) -eq 1 ]]; then
+    local elapsed_mins=$(echo ${elapsed_fract} | xargs printf "%.2f")
+    local detail_paddd=$(\
+      echo ${detail} \
+      | xargs printf "%20s" \
+      | /bin/sed -e "s/ /━/g" \
+      | /bin/sed -e "s/\b/ /" \
+    )
+    echo "┗━━${detail_paddd} 》took ${elapsed_mins} min."
+  fi
+}
+
+# ***
+
+workdir_prepare () {
+  OUR_WORKDIR=false
+  if [[ -z "${WORKDIR}" ]]; then
+    if [[ -s "${CFG_WORKDIR}" ]]; then
+      WORKDIR=$(cat ${CFG_WORKDIR})
+    else
+      WORKDIR=$(mktemp --suffix='.workdir' -d) || echo "FAIL!"
+      /bin/mkdir -p ${SAFI_CFG}
+      echo ${WORKDIR} > ${CFG_WORKDIR}
+    fi
+    OUR_WORKDIR=true
+  fi
+  echo "WORKDIR=${WORKDIR}"
+  /bin/mkdir -p "${WORKDIR}"
+}
+
+workdir_expunge () {
+  ${SKIP_UPLOAD} && return 0
+
+  # (lb): Not sure why I'm so paranoid to run rm-rf, but here's its manifestation:
+  [[ -z ${WORKDIR} ]] && >&2 echo "ERROR: Unexpected: WORKDIR not set." && exit 2
+  [[ ${WORKDIR} == '/' ]] && >&2 echo "ERROR: Unexpected: WORKDIR at /" && exit 2
+
+  # 2019-10-17: (lb): We could just as easily not ask to delete, but this code
+  # is green, so until I'm more confident everything is running smoothly, let's
+  # engage the user before obliterating working files.
+  echo "Ready to remove working files at: “${WORKDIR}”"
+  ask_user_yes_no_must_yes "Really remove working files?"
+
+  echo "  /bin/rm -rf -- \"${WORKDIR}\""
+  /bin/rm -rf -- "${WORKDIR}"
+
+  truncate -s 0 ${CFG_WORKDIR}
+}
+
+workdir_rmdir_if_empty () {
+  [[ -z ${WORKDIR} || -e ${WORKDIR} ]] || return 0
+  if [[ ! -d ${WORKDIR} ]]; then
+    >&2 echo "ERROR: Expected WORKDIR to be a directory! At: “${WORKDIR}”"
+    exit 3
+  fi
+  if [[ -n "$(/bin/ls -A ${WORKDIR})" ]]; then
+    echo "NOTE: So you can run the command again, the working directory" \
+      "was not deleted from: “${WORKDIR}”"
+    return 0
+  fi
+  /bin/rmdir "${WORKDIR}"
+  ${OUR_WORKDIR} && truncate -s 0 ${CFG_WORKDIR}
+  return 0
+}
+
+# ***
+
+ripe_time_to_upload () {
+  if [[ -s ${CFG_ARCHIVE_ID_NEWER} \
+     || -s ${CFG_ARCHIVE_ID_OLDER} \
+  ]]; then
+    >&2 echo "ERROR: An archive was recently uploaded:" \
+             "You must run ‘rotate’ before you can ‘upload’ again."
+    return 9
+  fi
+
+  # Only allow upload once per whatever duration user wants (defaults to per diem).
+  local time_fail=false
+  local touchfile
+  touchfile=$(echo ${WORKDIR} | /bin/sed -r "s/\.workdir$/.timechk/")
+  touch -d "${RESTRICT_UPLOAD_FREQ}" ${touchfile}
+  if [[ ${CFG_ARCHIVE_ID_FRESH} -nt ${touchfile} ]]; then
+    >&2 echo "ERROR: You performed a previous upload too recently." \
+      "${RESTRICT_UPLOAD_FREQ}, or since, you ran upload,"\
+      "and you may not do so again until that amount of time completely passes."
+    time_fail=true
+  fi
+  /bin/rm ${touchfile}
+  ${time_fail} && return 5
+  return 0
+}
+
+prepare_upload_operation () {
+  ARCHIVE_FILE=${WORKDIR}/archive.tar.xz                  # archive.tar.xz
+  ARCHIVE_READY=${WORKDIR}/.archive-file                  # .archive-file
+  CHECKSUM_PLN=${ARCHIVE_FILE}.sha256sum                  # archive.tar.xz.sha256sum
+  ENCRYPTED_FILE=${WORKDIR}/arcrypt.gpg                   # arcrypt.gpg
+  ENCRYPTED_READY=${WORKDIR}/.arcrypt-file                # .arcrypt-file
+  TREEHASH_FILE=${ENCRYPTED_FILE}.treehash                # arcrypt.gpg.treehash
+  # multipart-upload → muppload
+  UPINIT_TIMESTAMP=${WORKDIR}/muppload.timestamp          # muppload.timestamp
+  UPLOAD_INIT_OUT=${WORKDIR}/muppload-1-init.out          # muppload-1-init.out
+  UPLOAD_PART_OUT=${WORKDIR}/muppload-2+-part.out         # muppload-2+-part.out
+  LAST_UPLOADED_PART=${WORKDIR}/.muppload-parts-latest    # .muppload-parts-latest
+  UPLOAD_COMPLETE_OUT=${WORKDIR}/muppload-3-complete.out  # muppload-3-complete.out
+  CHUNKS_DIR=${WORKDIR}/split-chunks                      # split-chunks
+  SPLIT_OUTPUT=${WORKDIR}/split-call.out                  # split-call.out
+}
+
+archive_flatten () {
+  if [[ -s "${ARCHIVE_READY}" ]]; then
+    ARCHIVE_FILE=$(cat ${ARCHIVE_READY})
+    if [[ ! -f ${ARCHIVE_FILE} ]]; then
+      >&2 echo "ERROR: Missing archive: ${ARCHIVE_FILE} / specified by: ${ARCHIVE_READY}"
+      exit 2
+    fi
+    echo "✓ Concatenated compressed Archive previously packaged!"
+    return 0
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Create Plain Archive..."
+  # If you want very verbose output (each file identified), try:
+  #   tar -cvJf ${ARCHIVE_FILE} ${FIEFDOM}
+  # Here's a nice progress meter, aka progress bar, using `pv`.
+  tar cCf ${FIEFDOM} - . \
+    | pv -s $(du -sb "${FIEFDOM}" | awk '{print $1}') \
+    | xz > ${ARCHIVE_FILE}
+  echo "${ARCHIVE_FILE}" > ${ARCHIVE_READY}
+  print_elapsed_time "${setup_time_0}" 'tar|xz'
+}
+
+archive_encrypt () {
+  if [[ -s "${ENCRYPTED_READY}" ]]; then
+    ENCRYPTED_FILE=$(cat ${ENCRYPTED_READY})
+    if [[ ! -f ${ENCRYPTED_FILE} ]]; then
+      >&2 echo "ERROR: Missing file: ${ENCRYPTED_FILE} / specified by: ${ENCRYPTED_READY}"
+      exit 2
+    fi
+    echo "✓ Encrypted nugget of digital Fiefdom previously made!"
+    return 0
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Create Encrypted File..."
+  gpg --encrypt \
+    --recipient ${GPG_KEYID} \
+    --output ${ENCRYPTED_FILE} \
+    ${ARCHIVE_FILE}
+  echo "${ENCRYPTED_FILE}" > ${ENCRYPTED_READY}
+  print_elapsed_time "${setup_time_0}" 'gpg-encrypt'
+}
+
+checksum_compute_reckon () {
+  if [[ -s "${CHECKSUM_PLN}" ]]; then
+    echo "✓ Checksum previously computed for plain Archive file!"
+    return 0
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Compute Checksum of Plain Archive..."
+  shasum -a 256 ${ARCHIVE_FILE} | awk '{print $1}' > ${CHECKSUM_PLN}
+  print_elapsed_time "${setup_time_0}" 'shasum'
+}
+
+checksum_compute_setvar () {
+  ARCHIVE_XSUM=$(cat ${CHECKSUM_PLN})
+  [[ -z "${ARCHIVE_XSUM}" ]] && >&2 echo "ERROR: Unknown Checksum value." && exit 3
+  return 0
+}
+
+encryptedf_treehash_reckon () {
+  if [[ -s "${TREEHASH_FILE}" ]]; then
+    echo "✓ Tree Hash already computed for the Upload operation!"
+    return 0
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Calculate Tree Hash of Encrypted File..."
+  /usr/bin/env python2 ${TREEHASHER} ${ENCRYPTED_FILE} > "${TREEHASH_FILE}"
+  print_elapsed_time "${setup_time_0}" 'tree-hash'
+}
+
+encryptedf_treehash_setvar () {
+  TREEHASHVAL=$( \
+    cat "${TREEHASH_FILE}" \
+    | /bin/sed -r "s/SHA-256 Tree Hash = //" \
+  )
+  [[ -z "${TREEHASHVAL}" ]] && >&2 echo "ERROR: Unknown tree hash value." && exit 3
+  return 0
+}
+
+encryptedf_verify_size () {
+  # CHUNK_SZ_4GB=$((2**32))
+  CHUNK_SZ_1GB=$((2**30))
+  # CHUNK_SZ_256MB=$((2**28))
+  # CHUNK_SZ_1MB=$((2**20))
+
+  # (lb): I've tried a 4GB split size with success, but I'm going with
+  # a 1GB split size so that the upload loop churns more frequently.
+  SPLIT_SZ=${CHUNK_SZ_1GB}
+
+  ENCRYPTED_SZ=$(du -b ${ENCRYPTED_FILE} | cut -f 1)
+  UPLOAD_SIZE0=$((${ENCRYPTED_SZ} - 1))
+
+  # The suffix defaults to 'aa', 'ab', etc.,
+  # so to make looping easier, make it numeric.
+  # Note also that split uses a default width of 2,
+  # and it'll pad numbers with 0, and it'll fail if
+  # more files are needed that can be handled by width.
+  # So specify a larger width, and start with the lowest
+  # number necessary to not have to worry about 0-padding.
+  #
+  # Note that using a width of 4, and starting at 1000, there are
+  # 10000-1000=9000 values that can be used. So 9000 * SPLIT_SZ is
+  # the largest size allowed. If SPLIT_SZ is 1GB, that largest size
+  # this algorithm as currently (hard-)coded can handle is 9TB.
+  SPLIT_START_N=1000
+  MAX_SPLITTABLE=$((9000 * ${SPLIT_SZ}))
+  if [[ ${ENCRYPTED_SZ} -gt ${MAX_SPLITTABLE} ]]; then
+    >&2 echo "ERROR: Encrypted file too large to split:" \
+      "${ENCRYPTED_SZ} > ${MAX_SPLITTABLE}"
+    exit 4
+  fi
+  if [[ ${MAX_UPLOAD_SIZE} -ge 0 \
+    && ${ENCRYPTED_SZ} -gt ${MAX_UPLOAD_SIZE} \
+  ]]; then
+    >&2 echo "ERROR: Encrypted file larger than user allows:" \
+      "${ENCRYPTED_SZ} > ${MAX_UPLOAD_SIZE}"
+    exit 5
+  fi
+
+  # Add (denom - 1) to numerator to round up integer division, to
+  # include the last chunk which might be smaller than the split size.
+  EXPECTED_CNT=$(((${ENCRYPTED_SZ} + ${SPLIT_SZ} - 1) / ${SPLIT_SZ}))
+  return 0
+}
+
+encryptedf_chunkify () {
+  /bin/mkdir -p ${CHUNKS_DIR}
+
+  UPLOAD_CHUNK_CNT=$(/bin/ls -1 ${CHUNKS_DIR} | wc -l)
+  if [[ ${UPLOAD_CHUNK_CNT} -eq ${EXPECTED_CNT} ]]; then
+    echo "✓ Encrypted file has been chunked into multiple Parts!"
+    return 0
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Chunkify Encrypted File..."
+  echo "- Split ${ENCRYPTED_SZ} bytes into ${EXPECTED_CNT} chunks of size ${SPLIT_SZ}"
+
+  split \
+    --suffix-length=4 \
+    --numeric-suffixes=${SPLIT_START_N} \
+    --bytes=${SPLIT_SZ} \
+    --verbose \
+    ${ENCRYPTED_FILE} ${CHUNKS_DIR}/chunk \
+      > ${SPLIT_OUTPUT}
+
+  print_elapsed_time "${setup_time_0}" 'split'
+}
+
+encryptedf_check_chunks () {
+  OUTPUT_CHUNK_CNT=$(wc -l ${SPLIT_OUTPUT} | awk '{print $1}')
+
+  if [[ ${OUTPUT_CHUNK_CNT} -ne ${EXPECTED_CNT} ]]; then
+    >&2 echo "ERROR: Split count (from output) not same as expected:" \
+      "${OUTPUT_CHUNK_CNT} != ${EXPECTED_CNT}"
+    exit 3
+  fi
+  return 0
+}
+
+user_prompt_uploadok () {
+  echo "Ready to upload an archive of ${ENCRYPTED_SZ} bytes!"
+  if [[ -s ${CFG_LEDGER_UP} ]]; then
+    local LAST_UPLOAD_DATE
+    local LAST_UPLOAD_SIZE
+    LAST_UPLOAD_DATE=$(tail -n 1 ${CFG_LEDGER_UP} | cut -f 1)
+    LAST_UPLOAD_SIZE=$(tail -n 1 ${CFG_LEDGER_UP} | cut -f 2)
+    echo "- For reference, previous was ${LAST_UPLOAD_SZ} bytes (on ${LAST_UPLOAD_DATE})."
+  fi
+
+  ask_user_yes_no_must_yes "Really upload this archive?"
+}
+
+aws_upload_initiate () {
+  if [[ -s "${UPLOAD_INIT_OUT}" ]]; then
+    echo "✓ The AWS Glacier Multipart Upload has been initiated!"
+    return 0
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Initiate Glacier Upload..."
+
+  ARCHIVE_DESCRIPTION="${APP_CMDNAME}-$(date +%Y-%m-%d)"
+  UPINIT_DATETIME="$(date +%Y-%m-%dT%H:%M:%S%z)"
+
+  if ${SKIP_UPLOAD}; then
+    # NSYNC: This echo should mirror the upcoming aws-glacier call.
+    echo aws glacier initiate-multipart-upload \
+      --account-id - \
+      --archive-description "${ARCHIVE_DESCRIPTION}" \
+      --part-size ${SPLIT_SZ} \
+      --vault-name ${VAULT_NAME} \
+      --region ${REGION}
+    return 0
+  fi
+  ${SKIP_UPLOAD} && return 0
+
+  aws glacier initiate-multipart-upload \
+    --account-id - \
+    --archive-description "${ARCHIVE_DESCRIPTION}" \
+    --part-size ${SPLIT_SZ} \
+    --vault-name ${VAULT_NAME} \
+    --region ${REGION} \
+      > ${UPLOAD_INIT_OUT}
+
+  # We don't save timestamp to the file to the file until we really init
+  # the upload (i.e., until this fcn. called without SKIP_UPLOAD true).
+  echo "${UPINIT_DATETIME}" > ${UPINIT_TIMESTAMP}
+
+  print_elapsed_time "${setup_time_0}" 'init-upload'
+}
+
+aws_upload_uploadid_setvar () {
+  if ${SKIP_UPLOAD}; then
+    UPLOAD_ID='XXXXXXX'
+  else
+    UPLOAD_ID=$(cat ${UPLOAD_INIT_OUT} | jq -r '.uploadId')
+    [[ -z "${UPLOAD_ID}" ]] && >&2 echo "ERROR: Unknown uploadId value." && exit 3
+    UPINIT_DATETIME=$(cat ${UPINIT_TIMESTAMP})
+    [[ -z "${UPINIT_DATETIME}" ]] && >&2 echo "ERROR: Unknown Timestamp value." && exit 3
+  fi
+  return 0
+}
+
+aws_upload_chunked () {
+  local ic=0
+
+  if [[ -s "${LAST_UPLOADED_PART}" ]]; then
+    local latest_ic
+    latest_ic="$(cat ${LAST_UPLOADED_PART})"
+    if [[ $((${latest_ic} + 1)) -ge ${OUTPUT_CHUNK_CNT} ]]; then
+      echo "✓ The Encrypted file's Part chunks have been Uploaded!"
+      return 0
+    fi
+    ic=${latest_ic}
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Upload Chunked Files..."
+
+  for ((; ic < ${OUTPUT_CHUNK_CNT}; ic++)); do
+    local byte_0
+    local byte_n
+    local split_i
+    local part_upload_out
+    byte_0=$((${ic} * ${SPLIT_SZ}))
+    byte_n=$(((${ic} + 1) * ${SPLIT_SZ} - 1))
+    [[ ${byte_n} -gt ${UPLOAD_SIZE0} ]] && byte_n=${UPLOAD_SIZE0}
+    split_i=$((${ic} + ${SPLIT_START_N}))
+    echo "Chunk #: ${split_i} / ${byte_0} to ${byte_n}"
+    part_upload_out=${UPLOAD_PART_OUT}.${split_i}
+
+    if ${SKIP_UPLOAD}; then
+      # NSYNC: This echo should mirror the upcoming aws-glacier call.
+      echo aws glacier upload-multipart-part \
+        --account-id - \
+        --region ${REGION} \
+        --vault-name ${VAULT_NAME} \
+        --upload-id="${UPLOAD_ID}" \
+        --body ${CHUNKS_DIR}/chunk${split_i} \
+        --range "bytes ${byte_0}-${byte_n}/*"
+    else
+      aws glacier upload-multipart-part \
+        --account-id - \
+        --region ${REGION} \
+        --vault-name ${VAULT_NAME} \
+        --upload-id="${UPLOAD_ID}" \
+        --body ${CHUNKS_DIR}/chunk${split_i} \
+        --range "bytes ${byte_0}-${byte_n}/*" \
+          > ${part_upload_out}
+      echo ${ic} > ${LAST_UPLOADED_PART}
+    fi
+  done
+
+  print_elapsed_time "${setup_time_0}" 'upload-parts'
+}
+
+aws_upload_complete_reckon () {
+  if [[ -s "${UPLOAD_COMPLETE_OUT}" ]]; then
+    echo "✓ The AWS Multipart Upload ID has been marked complete"
+    return 0
+  fi
+
+  local setup_time_0=$(date +%s.%N)
+  echo "Finish Glacier Operation..."
+
+  if ${SKIP_UPLOAD}; then
+    # NSYNC: This echo should mirror the upcoming aws-glacier call.
+    echo aws glacier complete-multipart-upload \
+      --account-id - \
+      --region ${REGION} \
+      --vault-name ${VAULT_NAME} \
+      --upload-id="${UPLOAD_ID}" \
+      --archive-size ${ENCRYPTED_SZ} \
+      --checksum ${TREEHASHVAL}
+    return 0
+  fi
+  ${SKIP_UPLOAD} && return 0
+
+  aws glacier complete-multipart-upload \
+      --account-id - \
+      --region ${REGION} \
+      --vault-name ${VAULT_NAME} \
+      --upload-id="${UPLOAD_ID}" \
+      --archive-size ${ENCRYPTED_SZ} \
+      --checksum ${TREEHASHVAL} \
+        > ${UPLOAD_COMPLETE_OUT}
+
+  print_elapsed_time "${setup_time_0}" 'complete-upload'
+}
+
+aws_upload_complete_setvar () {
+  if ${SKIP_UPLOAD}; then
+    NEW_ARCHIVE_ID='XXXXXXX'
+  else
+    NEW_ARCHIVE_ID="$(cat ${UPLOAD_COMPLETE_OUT} | jq -r '.archiveId')"
+    [[ -z "${NEW_ARCHIVE_ID}" ]] && >&2 echo "ERROR: Unknown archiveId value." && exit 3
+  fi
+  return 0
+}
+
+upload_ledger_headers () {
+  echo -e "DATETIME\tARCHIVE_BYTES\tARCHIVE_CKSUM\tAWS_ARCHIVE_ID"
+}
+
+upload_ledger_append () {
+  UPINIT_DATETIME="$(date +%Y-%m-%dT%H:%M:%S%z)"
+  LEDGER_ENTRY="${UPINIT_DATETIME}\t${ENCRYPTED_SZ}\t${ARCHIVE_XSUM}\t${NEW_ARCHIVE_ID}"
+
+  ${SKIP_UPLOAD} && return 0
+
+  echo "Update lifetime upload ledger..."
+
+  # Remember this Archive ID forever in the ledger.
+  if [[ ! -e ${CFG_LEDGER_UP} || ! -s ${CFG_LEDGER_UP} ]]; then
+    upload_ledger_headers > "${CFG_LEDGER_UP}"
+  fi
+  echo -e ${LEDGER_ENTRY} >> ${CFG_LEDGER_UP}
+}
+
+create_recovery_reminder () {
+  echo "Prepare cacheable Archive ID and Checksum file..."
+  upload_ledger_headers > "${CFG_LATEST_XSUM}"
+  echo -e ${LEDGER_ENTRY} >> ${CFG_LATEST_XSUM}
+  gpg --encrypt \
+    --armor \
+    --yes \
+    --recipient ${GPG_KEYID} \
+    --output ${CFG_LATEST_ENCD} \
+    ${CFG_LATEST_XSUM}
+}
+
+inventory_rotate () {
+  ${SKIP_UPLOAD} && return 0
+
+  echo "Rotate Archive ID files at ${SAFI_CFG}/.archive-id.*..."
+
+  /bin/mkdir -p ${SAFI_CFG}
+  if [[ -s ${CFG_ARCHIVE_ID_FRESH} ]]; then
+    /bin/mv ${CFG_ARCHIVE_ID_FRESH} ${CFG_ARCHIVE_ID_OLDER}
+    touch ${CFG_ARCHIVE_ID_FRESH}
+  fi
+  echo ${NEW_ARCHIVE_ID} > ${CFG_ARCHIVE_ID_NEWER}
+}
+
+# ***
+
+prepare_rotate_operation () {
+  TOUCHFILE_ONE_HOUR=${WORKDIR}/delarch-1-an-hour-before
+  AWS_DELETE_ARCHIVE=${WORKDIR}/delarch-3-delete-archive.out
+}
+
+state_determine_status () {
+  SF_STATE="unknown"
+  if [[ -s ${CFG_ARCHIVE_ID_FRESH} ]]; then
+    if [[ -s ${CFG_ARCHIVE_ID_OLDER} \
+       || -s ${CFG_ARCHIVE_ID_NEWER} ]]; then
+      >&2 echo "ERROR: Unknown state: Disparate Archive ID files detected:" \
+        "Because “${CFG_ARCHIVE_ID_FRESH}” is nonempty, the other two files should be empty:" \
+        "“$(basename {CFG_ARCHIVE_ID_OLDER})” and “$(basename {CFG_ARCHIVE_ID_NEWER})”"
+      exit 2
+    fi
+    SF_STATE="single-archive"
+  else
+    if [[ ! -s ${CFG_ARCHIVE_ID_OLDER} \
+       && ! -s ${CFG_ARCHIVE_ID_NEWER} ]]; then
+      echo "Nothing to do: No archives known about."
+      echo "- Have you ever run the ‘upload’ command?"
+      exit 0
+    elif [[ ! -s ${CFG_ARCHIVE_ID_OLDER} \
+         || ! -s ${CFG_ARCHIVE_ID_NEWER} ]]; then
+      >&2 echo "ERROR: Unknown state: Confusing Archive ID files detected:" \
+        "Because “${CFG_ARCHIVE_ID_FRESH}” is empty, the other two files should be nonempty:" \
+        "“$(basename {CFG_ARCHIVE_ID_OLDER})” and “$(basename {CFG_ARCHIVE_ID_NEWER})”"
+      exit 2
+    fi
+    SF_STATE="double-archive"
+  fi
+}
+
+state_can_be_rotated () {
+  if [[ "${SF_STATE}" == 'single-archive' ]]; then
+    echo "Nothing to do: Only 1 archive known about."
+    echo "- Have you run the ‘upload’ command recently?"
+    exit 0
+  fi
+  return 0
+}
+
+inventory_count_archives () {
+  # Only bug AWS at most once per hour.
+  touch -d "1 hour ago" ${TOUCHFILE_ONE_HOUR}
+  if [[ ${CFG_AWS_DESC_VAULT} -ot ${TOUCHFILE_ONE_HOUR} ]]; then
+    echo "Ask AWS for vault description..."
+    aws glacier describe-vault \
+      --account-id - \
+      --region ${REGION} \
+      --vault-name ${VAULT_NAME} \
+      > ${CFG_AWS_DESC_VAULT}
+  fi
+  NUM_ARCHIVES=$(cat ${CFG_AWS_DESC_VAULT} | jq -r '.NumberOfArchives')
+  /bin/rm ${TOUCHFILE_ONE_HOUR}
+}
+
+echo_keep_waiting () {
+  echo "→ If you uploaded an archive with the past 24 hours, you may need to keep waiting."
+}
+
+inventory_can_be_rotation () {
+  if [[ ${NUM_ARCHIVES} -eq 0 ]]; then
+    >&2 echo "ERROR: AWS says no archives found!"
+    >&2 echo "- Are your local config files out of sync? Look under: “${SAFI_CFG}”"
+    exit 1
+  elif [[ ${NUM_ARCHIVES} -eq 1 ]]; then
+    echo "Nothing to do: AWS says only 1 archive present."
+    echo_keep_waiting
+    exit 0
+  elif [[ ${NUM_ARCHIVES} -ne 2 ]]; then
+    >&2 echo 'ERROR: AWS indicates more than 2 archives!'
+    >&2 echo "  You'll need to fix this problem yourself!"
+    exit 3
+  fi
+  echo "Perfect! AWS indicates 2 archives in your vault."
+  echo "  Let's purge the old one!"
+  return 0
+}
+
+purged_ledger_headers () {
+  echo -e "DATETIME\tAWS_ARCHIVE_ID"
+}
+
+purged_ledger_update () {
+  # Record when this Archive was deleted.
+  if [[ ! -e ${CFG_LEDGER_RM} || ! -s ${CFG_LEDGER_RM} ]]; then
+    purged_ledger_headers > "${CFG_LEDGER_RM}"
+  fi
+  echo -e "$(date +%Y-%m-%dT%H:%M:%S%z)\t${OLD_ARCHIVE_ID}" >> ${CFG_LEDGER_RM}
+}
+
+aws_glacier_delete_archive () {
+  if ${SKIP_UPLOAD}; then
+    # NSYNC: This echo should mirror the upcoming aws-glacier call.
+    echo aws glacier \
+      delete-archive \
+      --account-id - \
+      --region ${REGION} \
+      --vault-name ${VAULT_NAME} \
+      --archive-id="${OLD_ARCHIVE_ID}"
+    return 0
+  fi
+  ${SKIP_UPLOAD} && return 0
+
+  aws glacier \
+    delete-archive \
+    --account-id - \
+    --region ${REGION} \
+    --vault-name ${VAULT_NAME} \
+    --archive-id="${OLD_ARCHIVE_ID}" \
+      > ${AWS_DELETE_ARCHIVE}
+
+  # Note that there's actually no output from the call,
+  # so ${AWS_DELETE_ARCHIVE} is simply an empty file.
+  if [[ -s ${AWS_DELETE_ARCHIVE} ]]; then
+    >&2 echo "ERROR: Unexpected reply from delete-archive: “$(cat ${AWS_DELETE_ARCHIVE})”"
+    exit 3
+  fi
+  /bin/rm ${AWS_DELETE_ARCHIVE}
+
+  purged_ledger_update
+}
+
+rotate_archive_ids () {
+  # (lb): Maintaining empty files rather than deleting to make
+  # managing these files in git (and thus sharing between my
+  # machines) easier.
+  truncate -s 0 ${CFG_ARCHIVE_ID_OLDER}
+  /bin/mv ${CFG_ARCHIVE_ID_NEWER} ${CFG_ARCHIVE_ID_FRESH}
+  touch ${CFG_ARCHIVE_ID_NEWER}
+}
+
+# ***
+
+salvage_fiefdom_update () {
+  workdir_prepare
+  ripe_time_to_upload || return $?
+  prepare_upload_operation
+  archive_flatten
+  archive_encrypt
+  checksum_compute_reckon
+  checksum_compute_setvar
+  encryptedf_treehash_reckon
+  encryptedf_treehash_setvar
+  encryptedf_verify_size
+  encryptedf_chunkify
+  encryptedf_check_chunks
+  user_prompt_uploadok
+  aws_upload_initiate
+  aws_upload_uploadid_setvar
+  aws_upload_chunked
+  aws_upload_complete_reckon
+  aws_upload_complete_setvar
+  upload_ledger_append
+  create_recovery_reminder
+  inventory_rotate
+  workdir_expunge
+}
+
+# ***
+
+salvage_fiefdom_rotate () {
+  workdir_prepare
+  prepare_rotate_operation
+  state_determine_status
+  state_can_be_rotated || return $?
+  inventory_count_archives
+  inventory_can_be_rotation || return $?
+  aws_glacier_delete_archive
+  rotate_archive_ids
+  workdir_rmdir_if_empty
+}
+
+# ***
+
+salvage-fiefdom () {
+  setup_application_vars
+
+  # Process --version and --help arguments immediately.
+  process_cmd_help_or_version "${@}" || return $?
+
+  # Note: `local var=$(cmd)` always returns local's status of 0, so
+  #       declare first, and then set it, as two separate operations,
+  #       lest the `||` not work as expected.
+  parse_args_application_opts "${@}" || return $?
+
+  expect_application_vars || return $?
+
+  chatty_print_application_vars
+
+  set -e
+
+  if [[ "${SALVAGE_OP}" == 'upload' ]]; then
+    salvage_fiefdom_update
+  elif [[ "${SALVAGE_OP}" == 'rotate' ]]; then
+    salvage_fiefdom_rotate
+  else
+    >&2 echo "ERROR: Not a command: “${SALVAGE_OP}”"
+    exit 1
+  fi
+
+}
+
+# ***
+
+function errexit_cleanup () {
+  local exit_code=$?
+  # Skip `workdir_expunge` on error; assume user will run again.
+  workdir_rmdir_if_empty
+  exit ${exit_code}
+}
+trap errexit_cleanup EXIT
+
+main () {
+  local exitcode=0
+  before_command
+  # $0 is `bash` when this file sourced; else it's this file.
+  # Whereas ${BASH_SOURCE[0]} always references this file.
+  if [[ ${BASH_SOURCE[0]} != "$0" ]]; then
+    # Being sourced, so expose the function, but do not call.
+    export -f salvage-fiefdom
+  else
+    salvage-fiefdom "${@}"
+    exitcode=$?
+  fi
+  after_command
+  return ${exitcode}
+}
+
+main "${@}"
+
+# Unhook errexit_cleanup.
+trap - EXIT
+
