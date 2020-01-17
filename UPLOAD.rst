@@ -208,7 +208,7 @@ One-time Setup Tasks
 
     cd choose/your/own/path
 
-    git clone ssh://git@github.com/changyy/aws-glacier-sha256-tree-hash.git
+    git clone git@github.com:changyy/aws-glacier-sha256-tree-hash.git
 
     TREEHASHER=$(pwd)/aws-glacier-sha256-tree-hash/main.py
 
