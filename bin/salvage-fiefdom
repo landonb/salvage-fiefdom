@@ -349,7 +349,7 @@ ripe_time_to_upload () {
   # Only allow upload once per whatever duration user wants (defaults to per diem).
   local time_fail=false
   local touchfile
-  touchfile=$(echo ${WORKDIR} | /bin/sed -r "s/\.workdir$/.timechk/")
+  touchfile=$(echo ${WORKDIR} | /bin/sed -E "s/\.workdir$/.timechk/")
   touch -d "${RESTRICT_UPLOAD_FREQ}" ${touchfile}
   if [[ ${CFG_ARCHIVE_ID_FRESH} -nt ${touchfile} ]]; then
     >&2 echo "ERROR: You performed a previous upload too recently." \
@@ -456,7 +456,7 @@ encryptedf_treehash_reckon () {
 encryptedf_treehash_setvar () {
   TREEHASHVAL=$( \
     cat "${TREEHASH_FILE}" \
-    | /bin/sed -r "s/SHA-256 Tree Hash = //" \
+    | /bin/sed -E "s/SHA-256 Tree Hash = //" \
   )
   [[ -z "${TREEHASHVAL}" ]] && >&2 echo "ERROR: Unknown tree hash value." && exit 3
   return 0

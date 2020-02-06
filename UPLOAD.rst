@@ -278,7 +278,7 @@ which is needed to complete the upload operation::
 
   TREEHASHVAL=$( \
     py2 ${TREEHASHER} ${CRYPTED} \
-    | /bin/sed -r "s/SHA-256 Tree Hash = //" \
+    | /bin/sed -E "s/SHA-256 Tree Hash = //" \
   )
 
 ###############################
