@@ -29,7 +29,7 @@ print_help_and_exit () {
     "        [-V|--vault-name VAULT_NAME]\n" \
     "        [-R|--region REGION]\n" \
     "        [-U|--gpg-keyid GPG_KEYID]\n" \
-    "        [upload|rotate]"
+    "        [upload|rotate]" \
     "        [<path/to/fiefdom>]"
   >&2 echo "Omit the final argument if you set FIEFDOM=path/to/fiefdom instead."
   >&2 echo "See \`man ${APP_CMDNAME}\` for more help."
