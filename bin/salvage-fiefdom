@@ -250,13 +250,20 @@ parse_args_application_opts () {
 
 # ***
 
+first_char_capped () {
+  echo "$1" | cut -c1-1 | tr '[:lower:]' '[:upper:]'
+}
+
 ask_user_yes_no_must_yes () {
   # Prompt user. Ask Yes or No.
   local yes_or_no=""
   echo -n "$1 [y/N] "
   read -e yes_or_no
   # Anything that starts with a 'Y' is acceptable.
-  if [[ ${yes_or_no^^} =~ ^Y.* ]]; then
+  # Was Bash-only:
+  #   if [[ ${yes_or_no^^} =~ ^Y.* ]]; then
+  # But now POSIX:
+  if [ "$(first_char_capped ${yes_or_no})" = 'Y' ]; then
     return 0
   else
     echo "Apparently not!"
