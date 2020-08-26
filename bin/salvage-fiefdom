@@ -250,6 +250,22 @@ parse_args_application_opts () {
 
 # ***
 
+# FIXME/2020-08-26: Move home_fries_nanos_now to shared dependency.
+home_fries_nanos_now () {
+  if command -v gdate > /dev/null; then
+    # macOS (brew install coreutils).
+    gdate +%s.%N
+  elif date --version &> /dev/null; then
+    # Linux/GNU.
+    date +%s.%N
+  else
+    # macOS pre-coreutils.
+    python -c 'import time; print("{:.9f}".format(time.time()))'
+  fi
+}
+
+# ***
+
 first_char_capped () {
   echo "$1" | cut -c1-1 | tr '[:lower:]' '[:upper:]'
 }
@@ -275,7 +291,7 @@ print_elapsed_time () {
   ${PRINT_ELAPSED} || return 0
   local time_0="$1"
   local detail="$2"
-  local time_n=$(date +%s.%N)
+  local time_n=$(home_fries_nanos_now)
   local elapsed_fract="$(echo "(${time_n} - ${time_0}) / 60" | bc -l)"
   if [[ $(echo "${elapsed_fract} >= 0.01" | bc -l) -eq 1 ]]; then
     local elapsed_mins=$(echo ${elapsed_fract} | xargs printf "%.2f")
@@ -397,7 +413,7 @@ archive_flatten () {
     return 0
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Create Plain Archive..."
   # If you want very verbose output (each file identified), try:
   #   tar -cvJf ${ARCHIVE_FILE} ${FIEFDOM}
@@ -420,7 +436,7 @@ archive_encrypt () {
     return 0
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Create Encrypted File..."
   gpg --encrypt \
     --recipient ${GPG_KEYID} \
@@ -436,7 +452,7 @@ checksum_compute_reckon () {
     return 0
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Compute Checksum of Plain Archive..."
   shasum -a 256 ${ARCHIVE_FILE} | awk '{print $1}' > ${CHECKSUM_PLN}
   print_elapsed_time "${setup_time_0}" 'shasum'
@@ -454,7 +470,7 @@ encryptedf_treehash_reckon () {
     return 0
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Calculate Tree Hash of Encrypted File..."
   /usr/bin/env python2 ${TREEHASHER} ${ENCRYPTED_FILE} > "${TREEHASH_FILE}"
   print_elapsed_time "${setup_time_0}" 'tree-hash'
@@ -524,7 +540,7 @@ encryptedf_chunkify () {
     return 0
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Chunkify Encrypted File..."
   echo "- Split ${ENCRYPTED_SZ} bytes into ${EXPECTED_CNT} chunks of size ${SPLIT_SZ}"
 
@@ -569,7 +585,7 @@ aws_upload_initiate () {
     return 0
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Initiate Glacier Upload..."
 
   ARCHIVE_DESCRIPTION="${APP_CMDNAME}-$(date +%Y-%m-%d)"
@@ -627,7 +643,7 @@ aws_upload_chunked () {
     ic=${latest_ic}
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Upload Chunked Files..."
 
   for ((; ic < ${OUTPUT_CHUNK_CNT}; ic++)); do
@@ -673,7 +689,7 @@ aws_upload_complete_reckon () {
     return 0
   fi
 
-  local setup_time_0=$(date +%s.%N)
+  local setup_time_0=$(home_fries_nanos_now)
   echo "Finish Glacier Operation..."
 
   if ${SKIP_UPLOAD}; then
