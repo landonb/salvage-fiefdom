@@ -348,7 +348,7 @@ workdir_rmdir_if_empty () {
     >&2 echo "ERROR: Expected WORKDIR to be a directory! At: “${WORKDIR}”"
     exit 3
   fi
-  if [[ -n "$(/bin/ls -A ${WORKDIR})" ]]; then
+  if [[ -n "$(/usr/bin/env ls -A ${WORKDIR})" ]]; then
     echo "NOTE: So you can run the command again, the working directory" \
       "was not deleted from: “${WORKDIR}”"
     return 0
@@ -534,7 +534,7 @@ encryptedf_verify_size () {
 encryptedf_chunkify () {
   /bin/mkdir -p ${CHUNKS_DIR}
 
-  UPLOAD_CHUNK_CNT=$(/bin/ls -1 ${CHUNKS_DIR} | wc -l)
+  UPLOAD_CHUNK_CNT=$(/usr/bin/env ls -1 ${CHUNKS_DIR} | wc -l)
   if [[ ${UPLOAD_CHUNK_CNT} -eq ${EXPECTED_CNT} ]]; then
     echo "✓ Encrypted file has been chunked into multiple Parts!"
     return 0
