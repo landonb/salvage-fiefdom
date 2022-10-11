@@ -6,14 +6,6 @@ setup_business_vars () {
   APP_VERSION=0.0.2
 }
 
-before_command () {
-  setup_business_vars
-}
-
-after_command () {
-  :
-}
-
 # ***
 
 print_version_and_exit () {
@@ -250,19 +242,57 @@ parse_args_application_opts () {
 
 # ***
 
-# FIXME/2020-08-26: Move home_fries_nanos_now to shared dependency.
-home_fries_nanos_now () {
-  if command -v gdate > /dev/null 2>&1; then
-    # macOS (brew install coreutils).
-    gdate +%s.%N
-  elif date --version > /dev/null 2>&1; then
-    # Linux/GNU.
-    date +%s.%N
-  else
-    # macOS pre-coreutils.
-    python -c 'import time; print("{:.9f}".format(time.time()))'
-  fi
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ #
+
+# *** <beg boilerplate `source_deps`: ------------------------------|
+#                                                                   |
+
+source_deps () {
+  local thispth="$1"
+  local prefix="."
+  local depsnok=false
+
+  _source_it () {
+    local prfx="${1:-.}"
+    local depd="${2:-.}"
+    local file="${3:-.}"
+    local path="${prfx}/${depd}/${file}"
+    if command -v "${file}" > /dev/null; then
+      # Use version found on PATH.
+      . "${file}"
+    elif [ -f "${path}" ]; then
+      # Fallback on local deps/ copy.
+      # NOTE: `dash` complains if missing './'.
+      . "${path}"
+    else
+      local depstxt=''
+      [ "${prfx}" != "." ] && depstxt="in ‘${prfx}/${depd}’ or "
+      >&2 echo "MISSING: ‘${file}’ not found ${depstxt}on PATH."
+      depsnok=true
+    fi
+  }
+
+  # Allow user to symlink executables and not libraries.
+  # E.g., `ln -s /path/to/bin/logger.sh /tmp/logger.sh ; /tmp/logger.sh`
+  # knows that it can look relative to /path/to/bin/ for sourceable files.
+  [ -n "${thispth}" ] && prefix="$(dirname -- "$(realpath -- "${thispth}")")"
+
+  #                                                                 |
+  # *** stop boilerplate> ------------------------------------------|
+
+  # Load `print_nanos_now`.
+  _source_it "${prefix}" "../deps/sh-print-nanos-now/bin" "print-nanos-now.sh"
+
+  # *** <more boilerplate: -----------------------------------------|
+  #                                                                 |
+
+  ! ${depsnok}
 }
+
+#                                                                   |
+# *** end boilerplate `source_deps`> -------------------------------|
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ #
 
 # ***
 
@@ -291,7 +321,7 @@ print_elapsed_time () {
   ${PRINT_ELAPSED} || return 0
   local time_0="$1"
   local detail="$2"
-  local time_n=$(home_fries_nanos_now)
+  local time_n=$(print_nanos_now)
   local elapsed_fract="$(echo "(${time_n} - ${time_0}) / 60" | bc -l)"
   if [ $(echo "${elapsed_fract} >= 0.01" | bc -l) -eq 1 ]; then
     local elapsed_mins=$(echo ${elapsed_fract} | xargs printf "%.2f")
@@ -413,7 +443,7 @@ archive_flatten () {
     return 0
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Create Plain Archive..."
   # If you want very verbose output (each file identified), try:
   #   tar -cvJf ${ARCHIVE_FILE} ${FIEFDOM}
@@ -436,7 +466,7 @@ archive_encrypt () {
     return 0
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Create Encrypted File..."
   gpg --encrypt \
     --recipient ${GPG_KEYID} \
@@ -452,7 +482,7 @@ checksum_compute_reckon () {
     return 0
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Compute Checksum of Plain Archive..."
   shasum -a 256 ${ARCHIVE_FILE} | awk '{print $1}' > ${CHECKSUM_PLN}
   print_elapsed_time "${setup_time_0}" 'shasum'
@@ -470,7 +500,7 @@ encryptedf_treehash_reckon () {
     return 0
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Calculate Tree Hash of Encrypted File..."
   /usr/bin/env python2 ${TREEHASHER} ${ENCRYPTED_FILE} > "${TREEHASH_FILE}"
   print_elapsed_time "${setup_time_0}" 'tree-hash'
@@ -540,7 +570,7 @@ encryptedf_chunkify () {
     return 0
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Chunkify Encrypted File..."
   echo "- Split ${ENCRYPTED_SZ} bytes into ${EXPECTED_CNT} chunks of size ${SPLIT_SZ}"
 
@@ -585,7 +615,7 @@ aws_upload_initiate () {
     return 0
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Initiate Glacier Upload..."
 
   ARCHIVE_DESCRIPTION="${APP_CMDNAME}-$(date +%Y-%m-%d)"
@@ -643,7 +673,7 @@ aws_upload_chunked () {
     ic=${latest_ic}
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Upload Chunked Files..."
 
   for ((; ic < ${OUTPUT_CHUNK_CNT}; ic++)); do
@@ -689,7 +719,7 @@ aws_upload_complete_reckon () {
     return 0
   fi
 
-  local setup_time_0=$(home_fries_nanos_now)
+  local setup_time_0=$(print_nanos_now)
   echo "Finish Glacier Operation..."
 
   if ${SKIP_UPLOAD}; then
@@ -1005,9 +1035,10 @@ trap errexit_cleanup EXIT
 
 main () {
   local exitcode=0
-  before_command
+  setup_business_vars
   # $0 is `bash` when this file sourced; else it's this file.
   # Whereas ${BASH_SOURCE[0]} always references this file.
+  source_deps "${BASH_SOURCE[0]}" || return 1
   if [ ${BASH_SOURCE[0]} != "$0" ]; then
     # Being sourced, so expose the function, but do not call.
     export -f salvage-fiefdom
@@ -1015,7 +1046,6 @@ main () {
     salvage-fiefdom "${@}"
     exitcode=$?
   fi
-  after_command
   return ${exitcode}
 }
 
