@@ -369,7 +369,7 @@ workdir_expunge () {
   echo "  /bin/rm -rf -- \"${WORKDIR}\""
   /bin/rm -rf -- "${WORKDIR}"
 
-  truncate -s 0 ${CFG_WORKDIR}
+  truncate -s 0 -- "${CFG_WORKDIR}"
 }
 
 workdir_rmdir_if_empty () {
@@ -384,7 +384,7 @@ workdir_rmdir_if_empty () {
     return 0
   fi
   /bin/rmdir "${WORKDIR}"
-  ${OUR_WORKDIR} && truncate -s 0 ${CFG_WORKDIR}
+  ${OUR_WORKDIR} && truncate -s 0 -- "${CFG_WORKDIR}"
   return 0
 }
 
@@ -403,8 +403,8 @@ ripe_time_to_upload () {
   local time_fail=false
   local touchfile
   touchfile=$(echo ${WORKDIR} | /usr/bin/env sed -E "s/\.workdir$/.timechk/")
-  touch -d "${RESTRICT_UPLOAD_FREQ}" ${touchfile}
-  if [ ${CFG_ARCHIVE_ID_FRESH} -nt ${touchfile} ]; then
+  touch -d "${RESTRICT_UPLOAD_FREQ}" -- "${touchfile}"
+  if [ "${CFG_ARCHIVE_ID_FRESH}" -nt "${touchfile}" ]; then
     >&2 echo "ERROR: You performed a previous upload too recently." \
       "${RESTRICT_UPLOAD_FREQ}, or since, you ran upload,"\
       "and you may not do so again until that amount of time completely passes."
@@ -805,7 +805,7 @@ inventory_rotate () {
   /bin/mkdir -p ${SAFI_CFG}
   if [ -s "${CFG_ARCHIVE_ID_FRESH}" ]; then
     /bin/mv ${CFG_ARCHIVE_ID_FRESH} ${CFG_ARCHIVE_ID_OLDER}
-    touch ${CFG_ARCHIVE_ID_FRESH}
+    touch -- "${CFG_ARCHIVE_ID_FRESH}"
   fi
   echo ${NEW_ARCHIVE_ID} > ${CFG_ARCHIVE_ID_NEWER}
 }
@@ -859,7 +859,7 @@ state_can_be_rotated () {
 
 inventory_count_archives () {
   # Only bug AWS at most once per hour.
-  touch -d "1 hour ago" ${TOUCHFILE_ONE_HOUR}
+  touch -d "1 hour ago" -- "${TOUCHFILE_ONE_HOUR}"
   if [ ${CFG_AWS_DESC_VAULT} -ot ${TOUCHFILE_ONE_HOUR} ]; then
     echo "Ask AWS for vault description..."
     aws glacier describe-vault \
@@ -947,9 +947,9 @@ rotate_archive_ids () {
   # (lb): Maintaining empty files rather than deleting to make
   # managing these files in git (and thus sharing between my
   # machines) easier.
-  truncate -s 0 ${CFG_ARCHIVE_ID_OLDER}
-  /bin/mv ${CFG_ARCHIVE_ID_NEWER} ${CFG_ARCHIVE_ID_FRESH}
-  touch ${CFG_ARCHIVE_ID_NEWER}
+  truncate -s 0 -- "${CFG_ARCHIVE_ID_OLDER}"
+  /bin/mv "${CFG_ARCHIVE_ID_NEWER}" "${CFG_ARCHIVE_ID_FRESH}"
+  touch -- "${CFG_ARCHIVE_ID_NEWER}"
 }
 
 # ***
