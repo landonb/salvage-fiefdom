@@ -825,7 +825,7 @@ state_determine_status () {
     ; then
       >&2 echo "ERROR: Unknown state: Disparate Archive ID files detected:" \
         "Because “${CFG_ARCHIVE_ID_FRESH}” is nonempty, the other two files should be empty:" \
-        "“$(basename {CFG_ARCHIVE_ID_OLDER})” and “$(basename {CFG_ARCHIVE_ID_NEWER})”"
+        "“$(basename -- ${CFG_ARCHIVE_ID_OLDER})” and “$(basename -- ${CFG_ARCHIVE_ID_NEWER})”"
       exit 2
     fi
     SF_STATE="single-archive"
@@ -841,7 +841,7 @@ state_determine_status () {
     ; then
       >&2 echo "ERROR: Unknown state: Confusing Archive ID files detected:" \
         "Because “${CFG_ARCHIVE_ID_FRESH}” is empty, the other two files should be nonempty:" \
-        "“$(basename {CFG_ARCHIVE_ID_OLDER})” and “$(basename {CFG_ARCHIVE_ID_NEWER})”"
+        "“$(basename -- ${CFG_ARCHIVE_ID_OLDER})” and “$(basename -- ${CFG_ARCHIVE_ID_NEWER})”"
       exit 2
     fi
     SF_STATE="double-archive"
