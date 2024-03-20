@@ -92,6 +92,7 @@ expect_application_vars () {
 
   if [ -z "${SALVAGE_OP}" ]; then
     >&2 echo "ERROR: Specify an action: upload|rotate"
+
     exitcode=6
   fi
 
@@ -100,9 +101,11 @@ expect_application_vars () {
     if [ -z "${FIEFDOM}" ]; then
       >&2 echo -e 'ERROR: Specify <path/to/fiefdom>, or set FIEFDOM environment.' \
         "For more help, try:\n  ${APP_CMDNAME} --help"
+
       exitcode=7
     elif [ ! -d "${FIEFDOM}" ]; then
       >&2 echo "ERROR: No directory at FIEFDOM: ${FIEFDOM}"
+
       exitcode=8
     fi
 
@@ -112,6 +115,7 @@ expect_application_vars () {
     ; do
       if [ -z "${!var_name}" ]; then
         >&2 echo "ERROR: Missing env. var. or --opt: ${var_name}"
+
         exitcode=9
       fi
     done
@@ -124,6 +128,7 @@ expect_application_vars () {
   ; do
     if [ -z "${!var_name}" ]; then
       >&2 echo "ERROR: Missing env. var. or --opt: ${var_name}"
+
       exitcode=9
     fi
   done
@@ -133,6 +138,7 @@ expect_application_vars () {
 
 chatty_print_application_vars () {
   local var_name
+
   for var_name in \
     VAULT_NAME \
     REGION \
@@ -141,6 +147,7 @@ chatty_print_application_vars () {
   ; do
     [ -n "${!var_name}" ] && echo "${var_name}=${!var_name}"
   done
+
   [ -n "${FIEFDOM}" ] && echo "FIEFDOM=${FIEFDOM}"
 }
 
@@ -559,6 +566,7 @@ encryptedf_verify_size () {
   # Add (denom - 1) to numerator to round up integer division, to
   # include the last chunk which might be smaller than the split size.
   EXPECTED_CNT=$(((${ENCRYPTED_SZ} + ${SPLIT_SZ} - 1) / ${SPLIT_SZ}))
+
   return 0
 }
 
@@ -670,6 +678,7 @@ aws_upload_chunked () {
     latest_ic="$(cat ${LAST_UPLOADED_PART})"
     if [ $((${latest_ic} + 1)) -ge ${OUTPUT_CHUNK_CNT} ]; then
       echo "✓ The Encrypted file's Part chunks have been Uploaded!"
+
       return 0
     fi
     ic=${latest_ic}
