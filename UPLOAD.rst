@@ -349,7 +349,7 @@ Upload each chunk, one by one::
 
 Complete the upload operation::
 
-  ENCRYPTED_SZ=$(du -b ${CRYPTED} | cut -f 1)
+  ENCRYPTED_SZ=$(command du -b ${CRYPTED} | cut -f 1)
   UPLOAD_SIZE0=$((${ENCRYPTED_SZ} - 1))
 
   UPLOAD_COMPLETE_OUT=${WORKDIR}/multipart-upload-complete.out
