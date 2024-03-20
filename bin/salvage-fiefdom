@@ -53,25 +53,25 @@ process_cmd_help_or_version () {
 
 setup_application_vars () {
   SALVAGE_OP=
-  VAULT_NAME=${VAULT_NAME:-}
-  REGION=${REGION:-}
-  GPG_KEYID=${GPG_KEYID:-}
-  FIEFDOM=${FIEFDOM:-}
+  VAULT_NAME="${VAULT_NAME:-}"
+  REGION="${REGION:-}"
+  GPG_KEYID="${GPG_KEYID:-}"
+  FIEFDOM="${FIEFDOM:-}"
 
-  TREEHASHER=${TREEHASHER:-}
+  TREEHASHER="${TREEHASHER:-}"
 
-  SAFI_CFG=${HOME}/.config/salvage-fiefdom
+  SAFI_CFG="${HOME}/.config/salvage-fiefdom"
   # Long-lived key-value files.
-  CFG_ARCHIVE_ID_FRESH=${SAFI_CFG}/.archive-id.fresh
-  CFG_ARCHIVE_ID_OLDER=${SAFI_CFG}/.archive-id.older
-  CFG_ARCHIVE_ID_NEWER=${SAFI_CFG}/.archive-id.newer
-  CFG_LEDGER_UP=${SAFI_CFG}/.ledger-upload
-  CFG_LEDGER_RM=${SAFI_CFG}/.ledger-remove
-  CFG_LATEST_XSUM=${SAFI_CFG}/.latest-checksum
-  CFG_LATEST_ENCD=${CFG_LATEST_XSUM}.gpg
+  CFG_ARCHIVE_ID_FRESH="${SAFI_CFG}/.archive-id.fresh"
+  CFG_ARCHIVE_ID_OLDER="${SAFI_CFG}/.archive-id.older"
+  CFG_ARCHIVE_ID_NEWER="${SAFI_CFG}/.archive-id.newer"
+  CFG_LEDGER_UP="${SAFI_CFG}/.ledger-upload"
+  CFG_LEDGER_RM="${SAFI_CFG}/.ledger-remove"
+  CFG_LATEST_XSUM="${SAFI_CFG}/.latest-checksum"
+  CFG_LATEST_ENCD="${CFG_LATEST_XSUM}.gpg"
   # Operation-specific key-value files.
-  CFG_WORKDIR=${SAFI_CFG}/.workdir
-  CFG_AWS_DESC_VAULT=${SAFI_CFG}/.aws-describe-vault.out
+  CFG_WORKDIR="${SAFI_CFG}/.workdir"
+  CFG_AWS_DESC_VAULT="${SAFI_CFG}/.aws-describe-vault.out"
 
   PRINT_ELAPSED=${PRINT_ELAPSED:-true}
 
@@ -149,11 +149,12 @@ chatty_print_application_vars () {
 parse_args_application_opts () {
   local skip_opts=false
   local n_extra_args=0
-  local salvage_op=''
-  local fiefdom_arg=''
-  while [ "$1" != '' ]; do
+  local salvage_op=""
+  local fiefdom_arg=""
+
+  while [ "$1" != "" ]; do
     local was_switch=false
-    if [ ! ${skip_opts} ] && [ "$1" = '--' ]; then
+    if [ ! ${skip_opts} ] && [ "$1" = "--" ]; then
       skip_opts=true
       shift
       continue
@@ -162,53 +163,53 @@ parse_args_application_opts () {
       case $1 in
         # ---
         -V)
-          VAULT_NAME=$2
+          VAULT_NAME="$2"
           shift 2
           ;;
         -V=?*)
-          VAULT_NAME=${1#-V=}
+          VAULT_NAME="${1#-V=}"
           shift
           ;;
         --vault-name)
-          VAULT_NAME=$2
+          VAULT_NAME="$2"
           shift 2
           ;;
         --vault-name=?*)
-          VAULT_NAME=${1#--vault-name=}
+          VAULT_NAME="${1#--vault-name=}"
           shift
           ;;
         # ---
         -R)
-          REGION=$2
+          REGION="$2"
           shift 2
           ;;
         -R=?*)
-          REGION=${1#-R=}
+          REGION="${1#-R=}"
           shift
           ;;
         --region)
-          REGION=$2
+          REGION="$2"
           shift 2
           ;;
         --region=?*)
-          REGION=${1#--region=}
+          REGION="${1#--region=}"
           shift
           ;;
         # ---
         -U)
-          GPG_KEYID=$2
+          GPG_KEYID="$2"
           shift 2
           ;;
         -U=?*)
-          GPG_KEYID=${1#-U=}
+          GPG_KEYID="${1#-U=}"
           shift
           ;;
         --gpg-keyid)
-          GPG_KEYID=$2
+          GPG_KEYID="$2"
           shift 2
           ;;
         --gpg-keyid=?*)
-          GPG_KEYID=${1#--gpg-keyid=}
+          GPG_KEYID="${1#--gpg-keyid=}"
           shift
           ;;
         # ---
@@ -234,9 +235,9 @@ parse_args_application_opts () {
     >&2 echo 'ERROR: Too many additional, confusing arguments specified; please cleanup your command.'
     exit 1
   fi
-  SALVAGE_OP=${salvage_op}
+  SALVAGE_OP="${salvage_op}"
   if [ -n "${fiefdom_arg}" ]; then
-    FIEFDOM=${fiefdom_arg}
+    FIEFDOM="${fiefdom_arg}"
   fi
 }
 
@@ -326,7 +327,7 @@ print_elapsed_time () {
   if [ $(echo "${elapsed_fract} >= 0.01" | bc -l) -eq 1 ]; then
     local elapsed_mins=$(echo ${elapsed_fract} | xargs printf "%.2f")
     local detail_paddd=$(\
-      echo ${detail} \
+      echo "${detail}" \
       | xargs printf "%20s" \
       | /usr/bin/env sed -e "s/ /━/g" \
       | /usr/bin/env sed -e "s/\b/ /" \
@@ -341,11 +342,11 @@ workdir_prepare () {
   OUR_WORKDIR=false
   if [ -z "${WORKDIR}" ]; then
     if [ -s "${CFG_WORKDIR}" ]; then
-      WORKDIR=$(cat ${CFG_WORKDIR})
+      WORKDIR="$(cat "${CFG_WORKDIR}")"
     else
-      WORKDIR=$(mktemp --suffix='.workdir' -d) || echo "FAIL!"
-      /bin/mkdir -p ${SAFI_CFG}
-      echo ${WORKDIR} > ${CFG_WORKDIR}
+      WORKDIR="$(mktemp --suffix='.workdir' -d)" || echo "FAIL!"
+      /bin/mkdir -p "${SAFI_CFG}"
+      echo "${WORKDIR}" > "${CFG_WORKDIR}"
     fi
     OUR_WORKDIR=true
   fi
@@ -402,7 +403,7 @@ ripe_time_to_upload () {
   # Only allow upload once per whatever duration user wants (defaults to per diem).
   local time_fail=false
   local touchfile
-  touchfile=$(echo ${WORKDIR} | /usr/bin/env sed -E "s/\.workdir$/.timechk/")
+  touchfile=$(echo "${WORKDIR}" | /usr/bin/env sed -E "s/\.workdir$/.timechk/")
   touch -d "${RESTRICT_UPLOAD_FREQ}" -- "${touchfile}"
   if [ "${CFG_ARCHIVE_ID_FRESH}" -nt "${touchfile}" ]; then
     >&2 echo "ERROR: You performed a previous upload too recently." \
@@ -416,25 +417,25 @@ ripe_time_to_upload () {
 }
 
 prepare_upload_operation () {
-  ARCHIVE_FILE=${WORKDIR}/archive.tar.xz                  # archive.tar.xz
-  ARCHIVE_READY=${WORKDIR}/.archive-file                  # .archive-file
-  CHECKSUM_PLN=${ARCHIVE_FILE}.sha256sum                  # archive.tar.xz.sha256sum
-  ENCRYPTED_FILE=${WORKDIR}/arcrypt.gpg                   # arcrypt.gpg
-  ENCRYPTED_READY=${WORKDIR}/.arcrypt-file                # .arcrypt-file
-  TREEHASH_FILE=${ENCRYPTED_FILE}.treehash                # arcrypt.gpg.treehash
+  ARCHIVE_FILE="${WORKDIR}/archive.tar.xz"                  # archive.tar.xz
+  ARCHIVE_READY="${WORKDIR}/.archive-file"                  # .archive-file
+  CHECKSUM_PLN="${ARCHIVE_FILE}.sha256sum"                  # archive.tar.xz.sha256sum
+  ENCRYPTED_FILE="${WORKDIR}/arcrypt.gpg"                   # arcrypt.gpg
+  ENCRYPTED_READY="${WORKDIR}/.arcrypt-file"                # .arcrypt-file
+  TREEHASH_FILE="${ENCRYPTED_FILE}.treehash"                # arcrypt.gpg.treehash
   # multipart-upload → muppload
-  UPINIT_TIMESTAMP=${WORKDIR}/muppload.timestamp          # muppload.timestamp
-  UPLOAD_INIT_OUT=${WORKDIR}/muppload-1-init.out          # muppload-1-init.out
-  UPLOAD_PART_OUT=${WORKDIR}/muppload-2+-part.out         # muppload-2+-part.out
-  LAST_UPLOADED_PART=${WORKDIR}/.muppload-parts-latest    # .muppload-parts-latest
-  UPLOAD_COMPLETE_OUT=${WORKDIR}/muppload-3-complete.out  # muppload-3-complete.out
-  CHUNKS_DIR=${WORKDIR}/split-chunks                      # split-chunks
-  SPLIT_OUTPUT=${WORKDIR}/split-call.out                  # split-call.out
+  UPINIT_TIMESTAMP="${WORKDIR}/muppload.timestamp"          # muppload.timestamp
+  UPLOAD_INIT_OUT="${WORKDIR}/muppload-1-init.out"          # muppload-1-init.out
+  UPLOAD_PART_OUT="${WORKDIR}/muppload-2+-part.out"         # muppload-2+-part.out
+  LAST_UPLOADED_PART="${WORKDIR}/.muppload-parts-latest"    # .muppload-parts-latest
+  UPLOAD_COMPLETE_OUT="${WORKDIR}/muppload-3-complete.out"  # muppload-3-complete.out
+  CHUNKS_DIR="${WORKDIR}/split-chunks"                      # split-chunks
+  SPLIT_OUTPUT="${WORKDIR}/split-call.out"                  # split-call.out
 }
 
 archive_flatten () {
   if [ -s "${ARCHIVE_READY}" ]; then
-    ARCHIVE_FILE=$(cat ${ARCHIVE_READY})
+    ARCHIVE_FILE="$(cat ${ARCHIVE_READY})"
     if [ ! -f "${ARCHIVE_FILE}" ]; then
       >&2 echo "ERROR: Missing archive: ${ARCHIVE_FILE} / specified by: ${ARCHIVE_READY}"
       exit 2
@@ -443,12 +444,12 @@ archive_flatten () {
     return 0
   fi
 
-  local setup_time_0=$(print_nanos_now)
+  local setup_time_0="$(print_nanos_now)"
   echo "Create Plain Archive..."
   # If you want very verbose output (each file identified), try:
   #   tar -cvJf ${ARCHIVE_FILE} ${FIEFDOM}
   # Here's a nice progress meter, aka progress bar, using `pv`.
-  tar cCf ${FIEFDOM} - . \
+  tar cCf "${FIEFDOM}" - . \
     | pv -s $(du -sb "${FIEFDOM}" | awk '{print $1}') \
     | xz > ${ARCHIVE_FILE}
   echo "${ARCHIVE_FILE}" > ${ARCHIVE_READY}
@@ -457,7 +458,7 @@ archive_flatten () {
 
 archive_encrypt () {
   if [ -s "${ENCRYPTED_READY}" ]; then
-    ENCRYPTED_FILE=$(cat ${ENCRYPTED_READY})
+    ENCRYPTED_FILE=$(cat -- "${ENCRYPTED_READY}")
     if [ ! -f "${ENCRYPTED_FILE}" ]; then
       >&2 echo "ERROR: Missing file: ${ENCRYPTED_FILE} / specified by: ${ENCRYPTED_READY}"
       exit 2
@@ -469,10 +470,10 @@ archive_encrypt () {
   local setup_time_0=$(print_nanos_now)
   echo "Create Encrypted File..."
   gpg --encrypt \
-    --recipient ${GPG_KEYID} \
-    --output ${ENCRYPTED_FILE} \
-    ${ARCHIVE_FILE}
-  echo "${ENCRYPTED_FILE}" > ${ENCRYPTED_READY}
+    --recipient "${GPG_KEYID}" \
+    --output "${ENCRYPTED_FILE}" \
+    "${ARCHIVE_FILE}"
+  echo "${ENCRYPTED_FILE}" > "${ENCRYPTED_READY}"
   print_elapsed_time "${setup_time_0}" 'gpg-encrypt'
 }
 
@@ -484,12 +485,12 @@ checksum_compute_reckon () {
 
   local setup_time_0=$(print_nanos_now)
   echo "Compute Checksum of Plain Archive..."
-  shasum -a 256 ${ARCHIVE_FILE} | awk '{print $1}' > ${CHECKSUM_PLN}
+  shasum -a 256 "${ARCHIVE_FILE}" | awk '{print $1}' > "${CHECKSUM_PLN}"
   print_elapsed_time "${setup_time_0}" 'shasum'
 }
 
 checksum_compute_setvar () {
-  ARCHIVE_XSUM=$(cat ${CHECKSUM_PLN})
+  ARCHIVE_XSUM="$(cat -- "${CHECKSUM_PLN}")"
   [ -z "${ARCHIVE_XSUM}" ] && >&2 echo "ERROR: Unknown Checksum value." && exit 3
   return 0
 }
@@ -502,7 +503,7 @@ encryptedf_treehash_reckon () {
 
   local setup_time_0=$(print_nanos_now)
   echo "Calculate Tree Hash of Encrypted File..."
-  /usr/bin/env python2 ${TREEHASHER} ${ENCRYPTED_FILE} > "${TREEHASH_FILE}"
+  /usr/bin/env python2 "${TREEHASHER}" "${ENCRYPTED_FILE}" > "${TREEHASH_FILE}"
   print_elapsed_time "${setup_time_0}" 'tree-hash'
 }
 
@@ -579,14 +580,15 @@ encryptedf_chunkify () {
     --numeric-suffixes=${SPLIT_START_N} \
     --bytes=${SPLIT_SZ} \
     --verbose \
-    ${ENCRYPTED_FILE} ${CHUNKS_DIR}/chunk \
-      > ${SPLIT_OUTPUT}
+    "${ENCRYPTED_FILE}" \
+    "${CHUNKS_DIR}/chunk" \
+      > "${SPLIT_OUTPUT}"
 
   print_elapsed_time "${setup_time_0}" 'split'
 }
 
 encryptedf_check_chunks () {
-  OUTPUT_CHUNK_CNT=$(wc -l ${SPLIT_OUTPUT} | awk '{print $1}')
+  OUTPUT_CHUNK_CNT=$(wc -l -- "${SPLIT_OUTPUT}" | awk '{print $1}')
 
   if [ ${OUTPUT_CHUNK_CNT} -ne ${EXPECTED_CNT} ]; then
     >&2 echo "ERROR: Split count (from output) not same as expected:" \
@@ -652,9 +654,9 @@ aws_upload_uploadid_setvar () {
   if ${SKIP_UPLOAD}; then
     UPLOAD_ID='XXXXXXX'
   else
-    UPLOAD_ID=$(cat ${UPLOAD_INIT_OUT} | jq -r '.uploadId')
+    UPLOAD_ID=$(cat -- "${UPLOAD_INIT_OUT}" | jq -r '.uploadId')
     [ -z "${UPLOAD_ID}" ] && >&2 echo "ERROR: Unknown uploadId value." && exit 3
-    UPINIT_DATETIME=$(cat ${UPINIT_TIMESTAMP})
+    UPINIT_DATETIME=$(cat -- "${UPINIT_TIMESTAMP}")
     [ -z "${UPINIT_DATETIME}" ] && >&2 echo "ERROR: Unknown Timestamp value." && exit 3
   fi
   return 0
@@ -686,27 +688,27 @@ aws_upload_chunked () {
     [ ${byte_n} -gt ${UPLOAD_SIZE0} ] && byte_n=${UPLOAD_SIZE0}
     split_i=$((${ic} + ${SPLIT_START_N}))
     echo "Chunk #: ${split_i} / ${byte_0} to ${byte_n}"
-    part_upload_out=${UPLOAD_PART_OUT}.${split_i}
+    part_upload_out="${UPLOAD_PART_OUT}.${split_i}"
 
     if ${SKIP_UPLOAD}; then
       # NSYNC: This echo should mirror the upcoming aws-glacier call.
       echo aws glacier upload-multipart-part \
         --account-id - \
-        --region ${REGION} \
-        --vault-name ${VAULT_NAME} \
+        --region "${REGION}" \
+        --vault-name "${VAULT_NAME}" \
         --upload-id="${UPLOAD_ID}" \
-        --body ${CHUNKS_DIR}/chunk${split_i} \
+        --body "${CHUNKS_DIR}/chunk${split_i}" \
         --range "bytes ${byte_0}-${byte_n}/*"
     else
       aws glacier upload-multipart-part \
         --account-id - \
-        --region ${REGION} \
-        --vault-name ${VAULT_NAME} \
+        --region "${REGION}" \
+        --vault-name "${VAULT_NAME}" \
         --upload-id="${UPLOAD_ID}" \
-        --body ${CHUNKS_DIR}/chunk${split_i} \
+        --body "${CHUNKS_DIR}/chunk${split_i}" \
         --range "bytes ${byte_0}-${byte_n}/*" \
-          > ${part_upload_out}
-      echo ${ic} > ${LAST_UPLOADED_PART}
+          > "${part_upload_out}"
+      echo "${ic}" > "${LAST_UPLOADED_PART}"
     fi
   done
 
@@ -726,23 +728,23 @@ aws_upload_complete_reckon () {
     # NSYNC: This echo should mirror the upcoming aws-glacier call.
     echo aws glacier complete-multipart-upload \
       --account-id - \
-      --region ${REGION} \
-      --vault-name ${VAULT_NAME} \
+      --region "${REGION}" \
+      --vault-name "${VAULT_NAME}" \
       --upload-id="${UPLOAD_ID}" \
-      --archive-size ${ENCRYPTED_SZ} \
-      --checksum ${TREEHASHVAL}
+      --archive-size "${ENCRYPTED_SZ}" \
+      --checksum "${TREEHASHVAL}"
     return 0
   fi
   ${SKIP_UPLOAD} && return 0
 
   aws glacier complete-multipart-upload \
       --account-id - \
-      --region ${REGION} \
-      --vault-name ${VAULT_NAME} \
+      --region "${REGION}" \
+      --vault-name "${VAULT_NAME}" \
       --upload-id="${UPLOAD_ID}" \
-      --archive-size ${ENCRYPTED_SZ} \
-      --checksum ${TREEHASHVAL} \
-        > ${UPLOAD_COMPLETE_OUT}
+      --archive-size "${ENCRYPTED_SZ}" \
+      --checksum "${TREEHASHVAL}" \
+        > "${UPLOAD_COMPLETE_OUT}"
 
   print_elapsed_time "${setup_time_0}" 'complete-upload'
 }
@@ -751,7 +753,7 @@ aws_upload_complete_setvar () {
   if ${SKIP_UPLOAD}; then
     NEW_ARCHIVE_ID='XXXXXXX'
   else
-    NEW_ARCHIVE_ID="$(cat ${UPLOAD_COMPLETE_OUT} | jq -r '.archiveId')"
+    NEW_ARCHIVE_ID="$(cat -- "${UPLOAD_COMPLETE_OUT}" | jq -r '.archiveId')"
     [ -z "${NEW_ARCHIVE_ID}" ] && >&2 echo "ERROR: Unknown archiveId value." && exit 3
   fi
   return 0
@@ -782,19 +784,19 @@ upload_ledger_append () {
   if [ ! -e "${CFG_LEDGER_UP}" ] || [ ! -s "${CFG_LEDGER_UP}" ]; then
     upload_ledger_headers > "${CFG_LEDGER_UP}"
   fi
-  echo -e ${LEDGER_ENTRY} >> ${CFG_LEDGER_UP}
+  echo -e "${LEDGER_ENTRY}" >> "${CFG_LEDGER_UP}"
 }
 
 create_recovery_reminder () {
   echo "Prepare cacheable Archive ID and Checksum file..."
   upload_ledger_headers > "${CFG_LATEST_XSUM}"
-  echo -e ${LEDGER_ENTRY} >> ${CFG_LATEST_XSUM}
+  echo -e "${LEDGER_ENTRY}" >> "${CFG_LATEST_XSUM}"
   gpg --encrypt \
     --armor \
     --yes \
-    --recipient ${GPG_KEYID} \
-    --output ${CFG_LATEST_ENCD} \
-    ${CFG_LATEST_XSUM}
+    --recipient "${GPG_KEYID}" \
+    --output "${CFG_LATEST_ENCD}" \
+    "${CFG_LATEST_XSUM}"
 }
 
 inventory_rotate () {
@@ -807,14 +809,14 @@ inventory_rotate () {
     /bin/mv ${CFG_ARCHIVE_ID_FRESH} ${CFG_ARCHIVE_ID_OLDER}
     touch -- "${CFG_ARCHIVE_ID_FRESH}"
   fi
-  echo ${NEW_ARCHIVE_ID} > ${CFG_ARCHIVE_ID_NEWER}
+  echo "${NEW_ARCHIVE_ID}" > "${CFG_ARCHIVE_ID_NEWER}"
 }
 
 # ***
 
 prepare_rotate_operation () {
-  TOUCHFILE_ONE_HOUR=${WORKDIR}/delarch-1-an-hour-before
-  AWS_DELETE_ARCHIVE=${WORKDIR}/delarch-3-delete-archive.out
+  TOUCHFILE_ONE_HOUR="${WORKDIR}/delarch-1-an-hour-before"
+  AWS_DELETE_ARCHIVE="${WORKDIR}/delarch-3-delete-archive.out"
 }
 
 state_determine_status () {
@@ -825,7 +827,8 @@ state_determine_status () {
     ; then
       >&2 echo "ERROR: Unknown state: Disparate Archive ID files detected:" \
         "Because “${CFG_ARCHIVE_ID_FRESH}” is nonempty, the other two files should be empty:" \
-        "“$(basename -- ${CFG_ARCHIVE_ID_OLDER})” and “$(basename -- ${CFG_ARCHIVE_ID_NEWER})”"
+        "“$(basename -- "${CFG_ARCHIVE_ID_OLDER}")” and" \
+        "“$(basename -- "${CFG_ARCHIVE_ID_NEWER}")”"
       exit 2
     fi
     SF_STATE="single-archive"
@@ -841,7 +844,8 @@ state_determine_status () {
     ; then
       >&2 echo "ERROR: Unknown state: Confusing Archive ID files detected:" \
         "Because “${CFG_ARCHIVE_ID_FRESH}” is empty, the other two files should be nonempty:" \
-        "“$(basename -- ${CFG_ARCHIVE_ID_OLDER})” and “$(basename -- ${CFG_ARCHIVE_ID_NEWER})”"
+        "“$(basename -- "${CFG_ARCHIVE_ID_OLDER}")” and" \
+        "“$(basename -- "${CFG_ARCHIVE_ID_NEWER}")”"
       exit 2
     fi
     SF_STATE="double-archive"
@@ -864,12 +868,12 @@ inventory_count_archives () {
     echo "Ask AWS for vault description..."
     aws glacier describe-vault \
       --account-id - \
-      --region ${REGION} \
-      --vault-name ${VAULT_NAME} \
-      > ${CFG_AWS_DESC_VAULT}
+      --region "${REGION}" \
+      --vault-name "${VAULT_NAME}" \
+      > "${CFG_AWS_DESC_VAULT}"
   fi
-  NUM_ARCHIVES=$(cat ${CFG_AWS_DESC_VAULT} | jq -r '.NumberOfArchives')
-  /bin/rm ${TOUCHFILE_ONE_HOUR}
+  NUM_ARCHIVES=$(cat -- "${CFG_AWS_DESC_VAULT}" | jq -r '.NumberOfArchives')
+  /bin/rm "${TOUCHFILE_ONE_HOUR}"
 }
 
 echo_keep_waiting () {
@@ -908,7 +912,7 @@ purged_ledger_update () {
   if [ ! -e "${CFG_LEDGER_RM}" ] || [ ! -s "${CFG_LEDGER_RM}" ]; then
     purged_ledger_headers > "${CFG_LEDGER_RM}"
   fi
-  echo -e "$(date +%Y-%m-%dT%H:%M:%S%z)\t${OLD_ARCHIVE_ID}" >> ${CFG_LEDGER_RM}
+  echo -e "$(date +%Y-%m-%dT%H:%M:%S%z)\t${OLD_ARCHIVE_ID}" >> "${CFG_LEDGER_RM}"
 }
 
 aws_glacier_delete_archive () {
@@ -917,8 +921,8 @@ aws_glacier_delete_archive () {
     echo aws glacier \
       delete-archive \
       --account-id - \
-      --region ${REGION} \
-      --vault-name ${VAULT_NAME} \
+      --region "${REGION}" \
+      --vault-name "${VAULT_NAME}" \
       --archive-id="${OLD_ARCHIVE_ID}"
     return 0
   fi
@@ -927,15 +931,16 @@ aws_glacier_delete_archive () {
   aws glacier \
     delete-archive \
     --account-id - \
-    --region ${REGION} \
-    --vault-name ${VAULT_NAME} \
+    --region "${REGION}" \
+    --vault-name "${VAULT_NAME}" \
     --archive-id="${OLD_ARCHIVE_ID}" \
-      > ${AWS_DELETE_ARCHIVE}
+      > "${AWS_DELETE_ARCHIVE}"
 
   # Note that there's actually no output from the call,
   # so ${AWS_DELETE_ARCHIVE} is simply an empty file.
   if [ -s "${AWS_DELETE_ARCHIVE}" ]; then
-    >&2 echo "ERROR: Unexpected reply from delete-archive: “$(cat ${AWS_DELETE_ARCHIVE})”"
+    >&2 echo "ERROR: Unexpected reply from delete-archive: “$(cat -- "${AWS_DELETE_ARCHIVE}")”"
+
     exit 3
   fi
   /bin/rm ${AWS_DELETE_ARCHIVE}
@@ -1039,7 +1044,7 @@ main () {
   # $0 is `bash` when this file sourced; else it's this file.
   # Whereas ${BASH_SOURCE[0]} always references this file.
   source_deps "${BASH_SOURCE[0]}" || return 1
-  if [ ${BASH_SOURCE[0]} != "$0" ]; then
+  if [ "${BASH_SOURCE[0]}" != "$0" ]; then
     # Being sourced, so expose the function, but do not call.
     export -f salvage-fiefdom
   else
