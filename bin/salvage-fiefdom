@@ -352,13 +352,13 @@ workdir_prepare () {
       WORKDIR="$(cat "${CFG_WORKDIR}")"
     else
       WORKDIR="$(mktemp --suffix='.workdir' -d)" || echo "FAIL!"
-      /bin/mkdir -p "${SAFI_CFG}"
+      mkdir -p "${SAFI_CFG}"
       echo "${WORKDIR}" > "${CFG_WORKDIR}"
     fi
     OUR_WORKDIR=true
   fi
   echo "WORKDIR=${WORKDIR}"
-  /bin/mkdir -p "${WORKDIR}"
+  mkdir -p "${WORKDIR}"
 }
 
 workdir_expunge () {
@@ -386,7 +386,7 @@ workdir_rmdir_if_empty () {
     >&2 echo "ERROR: Expected WORKDIR to be a directory! At: “${WORKDIR}”"
     exit 3
   fi
-  if [ -n "$(/usr/bin/env ls -A ${WORKDIR})" ]; then
+  if [ -n "$(command ls -A -- "${WORKDIR}")" ]; then
     echo "NOTE: So you can run the command again, the working directory" \
       "was not deleted from: “${WORKDIR}”"
     return 0
@@ -418,7 +418,7 @@ ripe_time_to_upload () {
       "and you may not do so again until that amount of time completely passes."
     time_fail=true
   fi
-  /bin/rm ${touchfile}
+  command rm -- "${touchfile}"
   ${time_fail} && return 5
   return 0
 }
@@ -457,7 +457,7 @@ archive_flatten () {
   #   tar -cvJf ${ARCHIVE_FILE} ${FIEFDOM}
   # Here's a nice progress meter, aka progress bar, using `pv`.
   tar cCf "${FIEFDOM}" - . \
-    | pv -s $(du -sb "${FIEFDOM}" | awk '{print $1}') \
+    | pv -s $(command du -sb -- "${FIEFDOM}" | awk '{print $1}') \
     | xz > ${ARCHIVE_FILE}
   echo "${ARCHIVE_FILE}" > ${ARCHIVE_READY}
   print_elapsed_time "${setup_time_0}" 'tar|xz'
@@ -533,7 +533,7 @@ encryptedf_verify_size () {
   # a 1GB split size so that the upload loop churns more frequently.
   SPLIT_SZ=${CHUNK_SZ_1GB}
 
-  ENCRYPTED_SZ=$(du -b ${ENCRYPTED_FILE} | cut -f 1)
+  ENCRYPTED_SZ=$(command du -b -- "${ENCRYPTED_FILE}" | cut -f 1)
   UPLOAD_SIZE0=$((${ENCRYPTED_SZ} - 1))
 
   # The suffix defaults to 'aa', 'ab', etc.,
@@ -571,9 +571,9 @@ encryptedf_verify_size () {
 }
 
 encryptedf_chunkify () {
-  /bin/mkdir -p ${CHUNKS_DIR}
+  mkdir -p "${CHUNKS_DIR}"
 
-  UPLOAD_CHUNK_CNT=$(/usr/bin/env ls -1 ${CHUNKS_DIR} | wc -l)
+  UPLOAD_CHUNK_CNT=$(command ls -1 -- "${CHUNKS_DIR}" | wc -l)
   if [ ${UPLOAD_CHUNK_CNT} -eq ${EXPECTED_CNT} ]; then
     echo "✓ Encrypted file has been chunked into multiple Parts!"
     return 0
@@ -813,9 +813,9 @@ inventory_rotate () {
 
   echo "Rotate Archive ID files at ${SAFI_CFG}/.archive-id.*..."
 
-  /bin/mkdir -p ${SAFI_CFG}
+  mkdir -p "${SAFI_CFG}"
   if [ -s "${CFG_ARCHIVE_ID_FRESH}" ]; then
-    /bin/mv ${CFG_ARCHIVE_ID_FRESH} ${CFG_ARCHIVE_ID_OLDER}
+    command mv -- "${CFG_ARCHIVE_ID_FRESH}" "${CFG_ARCHIVE_ID_OLDER}"
     touch -- "${CFG_ARCHIVE_ID_FRESH}"
   fi
   echo "${NEW_ARCHIVE_ID}" > "${CFG_ARCHIVE_ID_NEWER}"
@@ -882,7 +882,7 @@ inventory_count_archives () {
       > "${CFG_AWS_DESC_VAULT}"
   fi
   NUM_ARCHIVES=$(cat -- "${CFG_AWS_DESC_VAULT}" | jq -r '.NumberOfArchives')
-  /bin/rm "${TOUCHFILE_ONE_HOUR}"
+  command rm -- "${TOUCHFILE_ONE_HOUR}"
 }
 
 echo_keep_waiting () {
@@ -952,7 +952,8 @@ aws_glacier_delete_archive () {
 
     exit 3
   fi
-  /bin/rm ${AWS_DELETE_ARCHIVE}
+
+  command rm -- "${AWS_DELETE_ARCHIVE}"
 
   purged_ledger_update
 }
@@ -962,7 +963,7 @@ rotate_archive_ids () {
   # managing these files in git (and thus sharing between my
   # machines) easier.
   truncate -s 0 -- "${CFG_ARCHIVE_ID_OLDER}"
-  /bin/mv "${CFG_ARCHIVE_ID_NEWER}" "${CFG_ARCHIVE_ID_FRESH}"
+  command mv -- "${CFG_ARCHIVE_ID_NEWER}" "${CFG_ARCHIVE_ID_FRESH}"
   touch -- "${CFG_ARCHIVE_ID_NEWER}"
 }
 
