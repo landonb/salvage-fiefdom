@@ -336,8 +336,8 @@ print_elapsed_time () {
     local detail_paddd=$(\
       echo "${detail}" \
       | xargs printf "%20s" \
-      | /usr/bin/env sed -e "s/ /━/g" \
-      | /usr/bin/env sed -e "s/\b/ /" \
+      | sed -e "s/ /━/g" \
+      | sed -e "s/\b/ /" \
     )
     echo "┗━━${detail_paddd} 》took ${elapsed_mins} min."
   fi
@@ -374,8 +374,8 @@ workdir_expunge () {
   echo "Ready to remove working files at: “${WORKDIR}”"
   ask_user_yes_no_must_yes "Really remove working files?"
 
-  echo "  /bin/rm -rf -- \"${WORKDIR}\""
-  /bin/rm -rf -- "${WORKDIR}"
+  echo "  command rm -rf -- \"${WORKDIR}\""
+  /command rm -rf -- "${WORKDIR}"
 
   truncate -s 0 -- "${CFG_WORKDIR}"
 }
@@ -391,7 +391,7 @@ workdir_rmdir_if_empty () {
       "was not deleted from: “${WORKDIR}”"
     return 0
   fi
-  /bin/rmdir "${WORKDIR}"
+  rmdir "${WORKDIR}"
   ${OUR_WORKDIR} && truncate -s 0 -- "${CFG_WORKDIR}"
   return 0
 }
@@ -410,7 +410,7 @@ ripe_time_to_upload () {
   # Only allow upload once per whatever duration user wants (defaults to per diem).
   local time_fail=false
   local touchfile
-  touchfile=$(echo "${WORKDIR}" | /usr/bin/env sed -E "s/\.workdir$/.timechk/")
+  touchfile=$(echo "${WORKDIR}" | sed -E "s/\.workdir$/.timechk/")
   touch -d "${RESTRICT_UPLOAD_FREQ}" -- "${touchfile}"
   if [ "${CFG_ARCHIVE_ID_FRESH}" -nt "${touchfile}" ]; then
     >&2 echo "ERROR: You performed a previous upload too recently." \
@@ -510,14 +510,14 @@ encryptedf_treehash_reckon () {
 
   local setup_time_0=$(print_nanos_now)
   echo "Calculate Tree Hash of Encrypted File..."
-  /usr/bin/env python2 "${TREEHASHER}" "${ENCRYPTED_FILE}" > "${TREEHASH_FILE}"
+  command python2 "${TREEHASHER}" "${ENCRYPTED_FILE}" > "${TREEHASH_FILE}"
   print_elapsed_time "${setup_time_0}" 'tree-hash'
 }
 
 encryptedf_treehash_setvar () {
   TREEHASHVAL=$( \
     cat "${TREEHASH_FILE}" \
-    | /usr/bin/env sed -E "s/SHA-256 Tree Hash = //" \
+    | sed -E "s/SHA-256 Tree Hash = //" \
   )
   [ -z "${TREEHASHVAL}" ] && >&2 echo "ERROR: Unknown tree hash value." && exit 3
   return 0

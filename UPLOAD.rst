@@ -414,13 +414,13 @@ wait, and then delete the old archive::
     --vault-name ${VAULT_NAME} \
     --archive-id="${OLD_ARCHIVE_ID}"
 
-  /bin/rm ${FIEF_CFG}/.archive-id.older
+  command rm ${FIEF_CFG}/.archive-id.older
   mv ${FIEF_CFG}/.archive-id.newer ${FIEF_CFG}/.archive-id.fresh
 
 You can clean up your mess, too::
 
-  /bin/rm -rf ${FIEFDOM}
-  /bin/rm -rf ${WORKDIR}
+  command rm -rf ${FIEFDOM}
+  command rm -rf ${WORKDIR}
 
 Finally, you might want to IRL record your
 `secret values <README.rst#record-these-values>`_
