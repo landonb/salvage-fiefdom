@@ -1046,7 +1046,7 @@ function errexit_cleanup () {
   workdir_rmdir_if_empty
   exit ${exit_code}
 }
-trap errexit_cleanup EXIT
+trap -- errexit_cleanup EXIT
 
 main () {
   local exitcode=0
