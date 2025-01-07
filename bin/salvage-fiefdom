@@ -1,12 +1,64 @@
 #!/usr/bin/env bash
 # vim:tw=0:ts=2:sw=2:et:ft=sh:
 
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ #
+
 setup_business_vars () {
   APP_CMDNAME="salvage-fiefdom"
   APP_VERSION=0.0.2
 }
 
-# ***
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ #
+
+# *** <beg boilerplate `source_deps`: ------------------------------|
+#                                                                   |
+
+source_deps () {
+  local thispth="$1"
+  local prefix="."
+  local depsnok=false
+
+  _source_it () {
+    local prfx="${1:-.}"
+    local depd="${2:-.}"
+    local file="${3:-.}"
+    local path="${prfx}/${depd}/${file}"
+    if command -v "${file}" > /dev/null; then
+      # Use version found on PATH.
+      . "${file}"
+    elif [ -f "${path}" ]; then
+      # Fallback on local deps/ copy.
+      # NOTE: `dash` complains if missing './'.
+      . "${path}"
+    else
+      local depstxt=''
+      [ "${prfx}" != "." ] && depstxt="in ‘${prfx}/${depd}’ or "
+      >&2 echo "MISSING: ‘${file}’ not found ${depstxt}on PATH."
+      depsnok=true
+    fi
+  }
+
+  # Allow user to symlink executables and not libraries.
+  # E.g., `ln -s /path/to/bin/logger.sh /tmp/logger.sh ; /tmp/logger.sh`
+  # knows that it can look relative to /path/to/bin/ for sourceable files.
+  [ -n "${thispth}" ] && prefix="$(dirname -- "$(realpath -- "${thispth}")")"
+
+  #                                                                 |
+  # *** stop boilerplate> ------------------------------------------|
+
+  # Load `print_nanos_now`.
+  _source_it "${prefix}" "../deps/sh-print-nanos-now/bin" "print-nanos-now.sh"
+
+  # *** <more boilerplate: -----------------------------------------|
+  #                                                                 |
+
+  ! ${depsnok}
+}
+
+#                                                                   |
+# *** end boilerplate `source_deps`> -------------------------------|
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ #
 
 print_version_and_exit () {
   # Use hard coded name, not $0, which is 'bash' when file is sourced.
@@ -248,61 +300,7 @@ parse_args_application_opts () {
   fi
 }
 
-# ***
-
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ #
-
-# *** <beg boilerplate `source_deps`: ------------------------------|
-#                                                                   |
-
-source_deps () {
-  local thispth="$1"
-  local prefix="."
-  local depsnok=false
-
-  _source_it () {
-    local prfx="${1:-.}"
-    local depd="${2:-.}"
-    local file="${3:-.}"
-    local path="${prfx}/${depd}/${file}"
-    if command -v "${file}" > /dev/null; then
-      # Use version found on PATH.
-      . "${file}"
-    elif [ -f "${path}" ]; then
-      # Fallback on local deps/ copy.
-      # NOTE: `dash` complains if missing './'.
-      . "${path}"
-    else
-      local depstxt=''
-      [ "${prfx}" != "." ] && depstxt="in ‘${prfx}/${depd}’ or "
-      >&2 echo "MISSING: ‘${file}’ not found ${depstxt}on PATH."
-      depsnok=true
-    fi
-  }
-
-  # Allow user to symlink executables and not libraries.
-  # E.g., `ln -s /path/to/bin/logger.sh /tmp/logger.sh ; /tmp/logger.sh`
-  # knows that it can look relative to /path/to/bin/ for sourceable files.
-  [ -n "${thispth}" ] && prefix="$(dirname -- "$(realpath -- "${thispth}")")"
-
-  #                                                                 |
-  # *** stop boilerplate> ------------------------------------------|
-
-  # Load `print_nanos_now`.
-  _source_it "${prefix}" "../deps/sh-print-nanos-now/bin" "print-nanos-now.sh"
-
-  # *** <more boilerplate: -----------------------------------------|
-  #                                                                 |
-
-  ! ${depsnok}
-}
-
-#                                                                   |
-# *** end boilerplate `source_deps`> -------------------------------|
-
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ #
-
-# ***
 
 first_char_capped () {
   echo "$1" | cut -c1-1 | tr '[:lower:]' '[:upper:]'
